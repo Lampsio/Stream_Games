@@ -336,11 +336,6 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [gameState, countdownValue]);
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
   const shuffleLetters = useCallback(() => {
     // If pool is empty or level changed, initialize it
     // Check if we need to regenerate the pool
