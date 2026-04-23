@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, ChangeEvent, FormEvent } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle } from 'lucide-react';
 import tmi from 'tmi.js';
@@ -72,9 +72,7 @@ export default function App() {
   const [globalStats, setGlobalStats] = useState<Record<string, UserStats>>({});
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [sessionWinnerAwarded, setSessionWinnerAwarded] = useState(false);
   const [shuffledLetters, setShuffledLetters] = useState<Letter[]>([]);
-  const [decoyLetter, setDecoyLetter] = useState<Letter | null>(null);
   const lettersPoolRef = useRef<Letter[]>([]);
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' | 'freeze' | 'hazard' | null }>({ message: "", type: null });
   const [specialWords, setSpecialWords] = useState<Record<string, SpecialWordType>>({});
@@ -289,7 +287,6 @@ export default function App() {
       return next;
     });
 
-    setSessionWinnerAwarded(true);
     setGameState('roundSummary');
   }, [levelIndex, addDebugLog]);
 
@@ -344,8 +341,6 @@ export default function App() {
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
-
-  // Shuffle master word letters
   const shuffleLetters = useCallback(() => {
     // If pool is empty or level changed, initialize it
     // Check if we need to regenerate the pool
@@ -373,9 +368,6 @@ export default function App() {
         const randomChar = alphabet[Math.floor(Math.random() * alphabet.length)];
         const decoy: Letter = { id: Math.random(), char: randomChar, isDecoy: true, isHidden: false };
         letters.push(decoy);
-        setDecoyLetter(decoy);
-      } else {
-        setDecoyLetter(null);
       }
       lettersPoolRef.current = letters;
 
@@ -494,7 +486,6 @@ export default function App() {
     // RESET ATOMIC GUARDS
     processedWordsInRoundRef.current.clear();
     awardProcessedRef.current = false; // RELEASE LOCK
-    setSessionWinnerAwarded(false);
     setShowRoundWords(false);
     
     if (nextIdx >= LEVELS.length) {
@@ -504,7 +495,6 @@ export default function App() {
       setLevelIndex(nextIdx);
     }
     setFoundWords([]);
-    setDecoyLetter(null);
     lettersPoolRef.current = [];
     setHints({});
     setLastActionTime(Date.now());
@@ -765,10 +755,8 @@ export default function App() {
     addDebugLog("Starting New Session", {});
     setFoundWords([]);
     setSessionScores({});
-    setSessionWinnerAwarded(false);
     awardProcessedRef.current = false;
     sessionAwardedRef.current = false; 
-    setDecoyLetter(null);
     lettersPoolRef.current = [];
     currentSessionIdRef.current = Math.random().toString(36).substring(7);
     lastProcessedLevelRef.current = -1;
@@ -777,16 +765,12 @@ export default function App() {
     setGameState('countdown');
   };
 
-  const score = useMemo(() => {
-    return foundWords.reduce((acc, fw) => acc + fw.word.length, 0);
-  }, [foundWords]);
-
   const leaders = useMemo(() => {
     const statsEntries = Object.entries(globalStats) as [string, UserStats][];
     if (statsEntries.length === 0) return {};
     
     // Find absolute top 1 for each category
-    const getTop = (sortFn: (a: [string, UserStats], b: [string, UserStats]) => number, minVal = 0) => {
+    const getTop = (sortFn: (a: [string, UserStats], b: [string, UserStats]) => number) => {
       const sorted = [...statsEntries].sort(sortFn);
       const top = sorted[0];
       // Only return if they have more than the min threshold to be a leader
@@ -1281,7 +1265,7 @@ export default function App() {
                 <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-neutral-900"></div>
               </div>
               <div className="max-h-[300px] overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                {sortedByPoints.slice(0, 50).map(([key, data], index) => (
+                {sortedByPoints.slice(0, 50).map(([key, data]) => (
                   <div key={key} className="flex items-center justify-between bg-bg-main/50 p-2.5 rounded-lg border border-border-color hover:border-yellow-500/30 transition-colors">
                     <span className="font-bold text-[10px] truncate max-w-[80px]">{data.displayName || key}</span>
                     <span className="font-black text-[10px] text-accent-red font-mono">{data.points}</span>
@@ -1306,7 +1290,7 @@ export default function App() {
                 <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-neutral-900"></div>
               </div>
               <div className="max-h-[300px] overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                {sortedByRoundWins.slice(0, 50).map(([key, data], index) => (
+                {sortedByRoundWins.slice(0, 50).map(([key, data]) => (
                   <div key={`${key}-roundwins`} className="flex items-center justify-between bg-bg-main/50 p-2.5 rounded-lg border border-green-500/10 hover:border-green-500/30 transition-colors">
                     <span className="font-bold text-[10px] truncate max-w-[80px]">{data.displayName || key}</span>
                     <span className="font-black text-[10px] text-green-400 font-mono">{data.roundWins || 0}</span>
@@ -1331,7 +1315,7 @@ export default function App() {
                 <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-neutral-900"></div>
               </div>
               <div className="max-h-[300px] overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                {sortedByGameWins.slice(0, 50).map(([key, data], index) => (
+                {sortedByGameWins.slice(0, 50).map(([key, data]) => (
                   <div key={`${key}-gamewins`} className="flex items-center justify-between bg-bg-main/50 p-2.5 rounded-lg border border-blue-500/10 hover:border-blue-500/30 transition-colors">
                     <span className="font-bold text-[10px] truncate max-w-[80px]">{data.displayName || key}</span>
                     <span className="font-black text-[10px] text-blue-400 font-mono">{data.gameWins || 0}</span>
@@ -1356,7 +1340,7 @@ export default function App() {
                 <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-neutral-900"></div>
               </div>
               <div className="max-h-[300px] overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                {sortedByMaster.slice(0, 50).map(([key, data], index) => (
+                {sortedByMaster.slice(0, 50).map(([key, data]) => (
                   <div key={`${key}-master`} className="flex items-center justify-between bg-bg-main/50 p-2.5 rounded-lg border border-orange-500/10 hover:border-orange-500/30 transition-colors">
                     <span className="font-bold text-[10px] truncate max-w-[80px]">{data.displayName || key}</span>
                     <span className="font-black text-[10px] text-orange-400 font-mono">{data.masterWordWins || 0}</span>
@@ -1381,7 +1365,7 @@ export default function App() {
                 <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-neutral-900"></div>
               </div>
               <div className="max-h-[300px] overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                {sortedByStreaks.slice(0, 50).map(([key, data], index) => (
+                {sortedByStreaks.slice(0, 50).map(([key, data]) => (
                   <div key={`${key}-streak`} className="flex items-center justify-between bg-bg-main/50 p-2.5 rounded-lg border border-purple-500/10 hover:border-purple-500/30 transition-colors">
                     <span className="font-bold text-[10px] truncate max-w-[80px]">{data.displayName || key}</span>
                     <div className="flex items-center gap-1">
