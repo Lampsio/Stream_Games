@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-main: #0F0F12;
+  --color-bg-card: #1A1A1F;
+  --color-accent-red: #E63946;
+  --color-text-primary: #F1FAEE;
+  --color-text-secondary: #A8A8A8;
+  --color-border-color: #2D2D35;
+  --font-sans: 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-bg-main text-text-primary;
+  }
+}
