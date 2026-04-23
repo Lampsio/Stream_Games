@@ -1,0 +1,23 @@
+{
+  "version": "0.1.0",
+  "notes": "Pierwsza wersja aplikacji Stream Games!",
+  "pub_date": "2024-04-23T12:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "",
+      "url": ""
+    },
+    "linux-x86_64": {
+      "signature": "",
+      "url": ""
+    },
+    "darwin-x86_64": {
+      "signature": "",
+      "url": ""
+    },
+    "darwin-aarch64": {
+      "signature": "",
+      "url": ""
+    }
+  }
+}

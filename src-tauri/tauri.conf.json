@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "words",
-        "width": 800,
-        "height": 600
+        "title": "Twitch Word Game",
+        "width": 1200,
+        "height": 800
       }
     ],
     "security": {
@@ -31,5 +31,15 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://raw.githubusercontent.com/Lampsio/Stream_Games/main/updater/latest.json"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFBNzA5REE0NUZFOTdDNjcKUldSbmZPbGZwSjF3R2grL09TVklGWU9KRHBuZldvU1lJalVIbC9Wd2VQeTZFN1ZrM21WMmg4RWEK"
+    }
   }
 }
