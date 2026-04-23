@@ -37,14 +37,22 @@ jobs:
       - name: build frontend
         run: npm run build
 
-      - uses: tauri-apps/tauri-action@v0
+      - name: build tauri app
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: app-v__VERSION__ # tauri-action replaces this with the version from tauri.conf.json
+          tagName: app-v__VERSION__
           releaseName: "App v__VERSION__"
           releaseBody: "See the assets below to download the latest version."
           releaseDraft: true
           prerelease: false
+
+      - name: display signatures
+        if: matrix.platform == 'windows-latest'
+        run: |
+          echo "=== SIGNATURE FOR WINDOWS EXE ==="
+          cat src-tauri/target/release/bundle/nsis/*.sig
+          echo "================================="
