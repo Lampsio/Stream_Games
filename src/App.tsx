@@ -875,6 +875,10 @@ export default function App() {
                 </span>
               </div>
 
+              <div className="flex justify-center mt-2">
+                <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: 0.1.1</span>
+              </div>
+
               <div className="grid grid-cols-2 gap-3 mt-4">
                 <button
                   disabled={!isConnected}
