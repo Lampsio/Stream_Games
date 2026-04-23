@@ -1618,8 +1618,8 @@ export default function App() {
     <div className="min-h-screen bg-bg-main text-text-primary font-sans flex flex-col overflow-hidden items-center">
       
       {/* Letters Section (The Scrambler) */}
-      <section className={`w-full h-[170px] flex flex-col items-center justify-center bg-linear-to-b from-bg-card to-bg-main relative transition-all duration-700 ${isDarknessActive ? 'blur-xl grayscale opacity-30 pointer-events-none scale-110' : ''}`}>
-        <div className="flex gap-2 md:gap-4 px-4 overflow-x-auto scrollbar-hide max-w-full">
+      <section className={`w-full h-[180px] flex flex-col items-center justify-center bg-linear-to-b from-bg-card to-bg-main relative transition-all duration-700 ${isDarknessActive ? 'blur-xl grayscale opacity-30 pointer-events-none scale-110' : ''}`}>
+        <div className="flex gap-2 md:gap-5 px-4 overflow-x-auto scrollbar-hide max-w-full pb-4">
           <AnimatePresence mode="popLayout">
             {shuffledLetters.map((item) => {
               const masterWordFound = foundWords.some(fw => fw.word === currentLevel.masterWord);
@@ -1635,11 +1635,11 @@ export default function App() {
                   initial={{ opacity: 0, scale: 0.8, y: 15 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   transition={{ type: "spring", stiffness: 350, damping: 25 }}
-                  className={`flex-shrink-0 w-[50px] h-[50px] md:w-[70px] md:h-[70px] flex items-center justify-center text-3xl md:text-5xl font-black rounded-xl shadow-[0_6px_0_#E63946] uppercase mb-4
+                  className={`flex-shrink-0 w-[55px] h-[55px] md:w-[85px] md:h-[85px] flex items-center justify-center text-4xl md:text-6xl font-black rounded-2xl shadow-[0_8px_0_#E63946] uppercase
                     ${isDecoyRevealed 
-                      ? 'bg-[#4a0000] text-red-500 border-2 border-red-900 shadow-[0_6px_0_#2a0000]' 
+                      ? 'bg-[#4a0000] text-red-500 border-2 border-red-900 shadow-[0_8px_0_#2a0000]' 
                       : isHiddenRevealed
-                        ? 'bg-yellow-400 text-bg-main border-2 border-yellow-600 shadow-[0_6px_0_#ca8a04]'
+                        ? 'bg-yellow-400 text-bg-main border-2 border-yellow-600 shadow-[0_8px_0_#ca8a04]'
                         : masterWordFound ? 'bg-accent-red text-white' : 'bg-white text-bg-main'}
                   `}
                 >
@@ -1692,7 +1692,7 @@ export default function App() {
                   <span className="text-[8px] font-black uppercase tracking-tighter">WYJDŹ</span>
                 </button>
               </div>
-              <span className="text-3xl font-black tracking-tighter text-accent-red uppercase italic">POZIOM {levelIndex + 1}</span>
+              <span className="text-4xl font-black tracking-tighter text-accent-red uppercase italic">POZIOM {levelIndex + 1}</span>
             </div>
             <div className="flex flex-col items-end">
                <span className="text-[10px] font-black tracking-[0.2em] text-text-secondary uppercase opacity-50 mb-1">ZDOBYTE LITERY:</span>
@@ -1710,7 +1710,7 @@ export default function App() {
           </div>
 
           <div className="flex-1 overflow-hidden pr-2">
-            <div className={`grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 h-full content-start transition-all duration-700 ${isDarknessActive ? 'blur-md grayscale opacity-20 pointer-events-none' : ''}`}>
+            <div className={`grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 h-full content-start transition-all duration-700 ${isDarknessActive ? 'blur-md grayscale opacity-20 pointer-events-none' : ''}`}>
               {possibleAnswers.map((word) => {
                 const foundData = foundWords.find(fw => fw.word === word);
                 const revealedIndices = hints[word] || [];
@@ -1724,9 +1724,9 @@ export default function App() {
                       scale: foundData ? 1 : 0.98,
                       y: foundData ? 0 : 2
                     }}
-                    className={`relative h-12 flex flex-col items-center justify-center rounded-lg border-2 transition-all duration-300
+                    className={`relative h-20 flex flex-col items-center justify-center rounded-xl border-2 transition-all duration-300
                       ${foundData 
-                        ? 'bg-accent-red border-accent-red text-white shadow-[0_0_15px_rgba(230,57,70,0.2)]' 
+                        ? 'bg-accent-red border-accent-red text-white shadow-[0_0_20px_rgba(230,57,70,0.3)]' 
                         : specialType === 'FREEZE' ? 'bg-blue-900/20 border-blue-500/50 shadow-[0_0_10px_rgba(59,130,246,0.3)]'
                         : specialType === 'GOLD' ? 'bg-yellow-900/20 border-yellow-500/50 shadow-[0_0_10px_rgba(234,179,8,0.3)]'
                         : specialType === 'TIME' ? 'bg-green-900/20 border-green-500/50 shadow-[0_0_10px_rgba(34,197,94,0.3)]'
@@ -1741,7 +1741,7 @@ export default function App() {
                     `}
                   >
                     {specialType && !foundData && (
-                      <div className="absolute -top-2 -right-2 z-20">
+                      <div className="absolute -top-3 -right-3 z-20 scale-125">
                         {specialType === 'FREEZE' && <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Timer className="w-3 h-3 text-white" /></div>}
                         {specialType === 'GOLD' && <div className="w-5 h-5 bg-yellow-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Trophy className="w-3 h-3 text-white" /></div>}
                         {specialType === 'TIME' && <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Clock className="w-3 h-3 text-white" /></div>}
@@ -1752,17 +1752,17 @@ export default function App() {
                         {specialType === 'MYSTERY' && <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main animate-bounce"><HelpCircle className="w-3.5 h-3.5 text-bg-main" /></div>}
                       </div>
                     )}
-                    <div className={`font-black text-lg tracking-[0.2em] font-mono ${foundData ? 'text-white' : 'text-accent-red font-bold'}`}>
+                    <div className={`font-black text-4xl tracking-[0.2em] font-mono ${foundData ? 'text-white' : 'text-accent-red font-bold'}`}>
                       {foundData ? word : word.split('').map((char, i) => revealedIndices.includes(i) ? char : '_').join('')}
-                      {revealedIndices.length > 0 && !foundData && <Sparkles className="inline-block w-3 h-3 ml-1 text-yellow-500 animate-pulse" />}
+                      {revealedIndices.length > 0 && !foundData && <Sparkles className="inline-block w-5 h-5 ml-2 text-yellow-500 animate-pulse" />}
                     </div>
                     {foundData && (
                       <motion.div 
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="text-[8px] font-black mt-0.5 truncate max-w-[90%] opacity-90 px-1.5 py-0.25 rounded bg-black/20 uppercase tracking-tighter flex items-center gap-1"
+                        className="text-[10px] font-black mt-1 truncate max-w-[90%] opacity-90 px-2 py-0.5 rounded bg-black/20 uppercase tracking-tighter flex items-center gap-1"
                       >
-                        <UserBadges username={foundData.user} size="w-2 h-2" />
+                        <UserBadges username={foundData.user} size="w-2.5 h-2.5" />
                         {foundData.user}
                       </motion.div>
                     )}
