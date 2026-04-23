@@ -56,4 +56,4 @@ jobs:
         run: |
           echo "=== SIGNATURE FOR WINDOWS EXE ==="
           cat src-tauri/target/release/bundle/nsis/*.sig
-          echo "================================="
+          echo "=============================="
