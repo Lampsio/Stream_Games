@@ -1769,7 +1769,7 @@ export default function App() {
           </div>
 
           <h1 className="text-4xl font-black tracking-tighter mb-2 italic">
-            TWITCH<span className="text-accent-red">GAMER</span>
+            TWITCH<span className="text-accent-red">SŁÓWKA</span>
           </h1>
           <p className="text-text-secondary font-medium tracking-widest text-[10px] uppercase mb-12 opacity-50">
             INTERAKTYWNA WYKREŚLANKA DLA TWOJEGO CZATU
@@ -1810,7 +1810,7 @@ export default function App() {
               </div>
 
               <div className="flex justify-center mt-2">
-                <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: 0.1.1</span>
+                <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: 0.1.7</span>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mt-4">
