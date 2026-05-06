@@ -2293,17 +2293,17 @@ export default function App() {
               <div className="flex items-center gap-3 mb-1">
                 <span className="text-[10px] font-black tracking-[0.3em] text-text-secondary uppercase opacity-50">STREFA GRY</span>
               </div>
-              <span className="text-7xl font-black tracking-tighter text-accent-red uppercase italic">POZIOM {levelIndex + 1}</span>
+              <span className="text-4xl font-black italic tracking-tighter text-accent-red uppercase italic">POZIOM {levelIndex + 1}</span>
             </div>
             <div className="flex flex-col items-end">
-               <span className="text-lg font-black tracking-[0.2em] text-text-secondary uppercase opacity-50 mb-1">ZDOBYTE LITERY:</span>
+               <span className="text-[10px] font-black tracking-[0.2em] text-text-secondary uppercase opacity-50 mb-1">ZDOBYTE LITERY:</span>
                <div className="flex items-baseline gap-2">
-                 <span className={`text-6xl font-black font-mono transition-colors duration-500 ${completionRate >= 70 ? 'text-green-500' : 'text-accent-red'}`}>
+                 <span className={`text-4xl font-black font-mono transition-colors duration-500 ${completionRate >= 70 ? 'text-green-500' : 'text-accent-red'}`}>
                     {foundLettersInLevel}
                  </span>
-                 <span className="text-text-secondary font-black text-3xl opacity-30">/</span>
+                 <span className="text-text-secondary font-black text-xl opacity-30">/</span>
                  <div className="flex flex-col">
-                   <span className="text-text-secondary font-black text-3xl opacity-50 leading-none">{targetLetters}</span>
+                   <span className="text-text-secondary font-black text-xl opacity-50 leading-none">{targetLetters}</span>
                    <span className="text-[7px] font-black tracking-widest text-text-secondary uppercase opacity-30 mt-0.5">CEL 70%</span>
                  </div>
                </div>
