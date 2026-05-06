@@ -4,12 +4,12 @@
   "pub_date": "2024-04-23T12:00:00Z",
   "platforms": {
       "windows-x86_64": {
-        "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTV0Q0tEaVJobmw0NHRkSEFQeDhLTGl6KzlXdmg4QStiaFBsS0RCZTVaYWR5R0M4N1h1UWhWWEdVYXAvY25rQlU3aWRvNTNHZEdCeVpUZ3NYUmcrSFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4MDY2ODQwCWZpbGU6c2xvd2thXzAuMS40X3g2NC1zZXR1cC5leGUKT1kvUUhpWXk5aVRPM0RXczQ0YSsxZFRUcFdNcko1VDZ2RUpPRHM0YytYQnkrVWJLYm9GcWFUQ2lxTmlVc3J1RFlzS2Q1NWNmcEpyMmQ5YXdCaXdWQUE9PQo=",
-        "url": "https://github.com/Lampsio/Stream_Games/releases/download/v0.1.4/slowka_0.1.4_x64-setup.exe"
+        "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTVhbENaSGhhbU1rc2cxZnNEcDZHYUJKNTZVQXUrMms4TllSeFFXU21JaTVCbVh5WTgwUjN4cXpzOXAyUGdGLzhoRHIxTkRFRFFvUmNrbnlrYk1kMmc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4MDcwMTk5CWZpbGU6c2xvd2thXzAuMS41X3g2NC1zZXR1cC5leGUKN2NNdURNajU4VlZnUlpMckRJQm9hbkFMY3JWUHZwTk9sYlZFVkM0WGhNUExqMG1pcDB2K2pFcDA2MWVPYTZmSFZtMU45aVFlM3dMaHA4R08zSjlJQ1E9PQo=",
+        "url": "https://github.com/Lampsio/Stream_Games/releases/download/untagged-b3a1301a428573c0f391/slowka_0.1.5_x64-setup.exe"
       },
       "linux-x86_64": {
-        "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTArcFNaNmNWcnZrY244b0UwcUlvMlV0TWhJc1d1L25IZlYwTjUwTXlKd0dCdlhLTU1Sa1h6bzc4d09iUVQ2NnIyODVZRWNZTHJFR1lYZjJPd3FKNHdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4MDY2ODE2CWZpbGU6c2xvd2thXzAuMS40X2FtZDY0LmRlYgpjTGNNeXN3am80TllMNlJ0ZXhvNFc0S0MreFR4SU1VNVQ4QXkxUjQ1VWVnYXp5alBzU3drbEZ1YTM1Wm8ybEw3bXlESHJMZ3FiWWhjbzdBOXdmL2REZz09Cg==",
-        "url": "https://github.com/Lampsio/Stream_Games/releases/download/v0.1.4/slowka_0.1.4_amd64.AppImage"
+        "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTc3L0xObnlGN1VtU3d2ZkJKUDhGUWZRRnpLbFRsQXlYQXlZd0xnM3RPNWZqVGVlMDRsblJyQTh6WFV6V2k5VkRyYzUyMDlacncrYW1lZnNmcCtIOHd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4MDcwMTA5CWZpbGU6c2xvd2thXzAuMS41X2FtZDY0LkFwcEltYWdlCnVDZVRXSm11cThzMjlJK3NVMC9adjdvbHZJY2c0bEFkMkFXOVMxS0VSR1lvamE0eWw1NjRxR2V3dklTQnQzNFNQc2k3ZUV1VHlyUmV5aWkxMnZGVEFBPT0K",
+        "url": "https://github.com/Lampsio/Stream_Games/releases/download/untagged-b3a1301a428573c0f391/slowka_0.1.5_amd64.AppImage"
       },
       "darwin-aarch64": {
         "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTl1aXFOOTA4MmlIdlVFM0xyTThnL0tub3BFaDFWaVNwT0VXb0trVFpmaGZLZXl5QlVRZlVvYTlseUZaWHNkYUZoN2pTODlNTXNMcnp6R1NHa1hac2drPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4MDY2NjU4CWZpbGU6c2xvd2thLmFwcC50YXIuZ3oKdTBFU3AzUitWYXpmT3ZHY0JLY2lMVzBIdW9mRGxidlpiYkJ3MzFkN3lmU0tOd2NDY0dHOEhhZTI3WDZvZFZYL3pLdnkwcHY5bTRsQndCMmpnNjR1QWc9PQo=",

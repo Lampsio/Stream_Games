@@ -10,6 +10,7 @@
     "updater:default",
     "shell:default",
     "opener:default",
+    "process:default",
     "store:default"
   ]
 }
