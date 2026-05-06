@@ -1,0 +1,83 @@
+[33mcommit 4eb5556d37a4e8d0ea8920640adce33fa4a3299a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Sat Apr 25 13:25:44 2026 +0200
+
+    fix: new rekease 7
+
+[33mcommit 5fddfc2999cba81f07af9150825af1e0100c9dd9[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 20:13:19 2026 +0200
+
+    fix: new rekease 6
+
+[33mcommit ad4f0e038f63dc649afbe1682a3fe4bcd6bc1b40[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 16:01:43 2026 +0200
+
+    fix: new rekease 5
+
+[33mcommit 617dfece08e45951fc585405e1732c445058e56b[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 15:45:41 2026 +0200
+
+    fix: new rekease 4
+
+[33mcommit 97313175aa13525a76b055e9bf9a0bbd0e095351[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 15:33:14 2026 +0200
+
+    fix: new rekease 3
+
+[33mcommit bb0894cca6840ad58b694850dce014099a65a025[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 15:13:16 2026 +0200
+
+    fix: new rekease 2
+
+[33mcommit 503be3990919d1eb3ae61d6c6a03fd971136d6bf[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 15:02:58 2026 +0200
+
+    fix: new rekease
+
+[33mcommit 039d85e6ecf5bd495cfeca75590f5044e35c65cc[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 14:39:52 2026 +0200
+
+    fix: new version 2
+
+[33mcommit 5685e8f7908ed70f03d1073f0c42753b5139c94d[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 14:12:11 2026 +0200
+
+    fix: new version test
+
+[33mcommit 34fe8bf573e4607ad142f855f8325a5bd8519ed1[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 13:42:15 2026 +0200
+
+    fix: poprawa release
+
+[33mcommit 23780ad1f1654fe0739cf5069b9b9c447f4aaf6c[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 13:31:56 2026 +0200
+
+    fix: poprawa time
+
+[33mcommit e996706ee4836684271e78404867724580bcf4e4[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 13:23:55 2026 +0200
+
+    fix: usunięcie
+
+[33mcommit c88ce336385d5c884b294e20412b76b9f098214e[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 13:15:14 2026 +0200
+
+    chore: gotowy projekt pod Tauri v2 z Updaterem
+
+[33mcommit e5d37d5a6f0388b1b4ecf312173ea0809dc4ffce[m
+Author: Daniel Slaczka <Lampsio>
+Date:   Thu Apr 23 12:23:34 2026 +0200
+
+    first commit
