@@ -65,7 +65,7 @@ interface DebugLog {
 export default function App() {
   const [gameState, setGameState] = useState<'lobby' | 'countdown' | 'playing' | 'roundSummary' | 'stats' | 'ended'>('lobby');
   const [debugLogs, setDebugLogs] = useState<DebugLog[]>([]);
-  const [showDebug, setShowDebug] = useState(false);
+  const [showDebug] = useState(false);
   const tmiClientRef = useRef<tmi.Client | null>(null);
   const [countdownValue, setCountdownValue] = useState(5);
   const [levelIndex, setLevelIndex] = useState(0);
