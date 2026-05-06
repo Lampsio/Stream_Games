@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "slowka",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "identifier": "com.daniel.words",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -36,8 +36,11 @@
   "plugins": {
     "updater": {
       "active": true,
+      "windows": {
+        "installMode": "passive"
+      },
       "endpoints": [
-        "https://raw.githubusercontent.com/Lampsio/Stream_Games/main/updater/latest.json"
+        "https://github.com/Lampsio/Stream_Games/releases/latest/download/latest.json"
       ],
       "dialog": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMzMUMwNkI1MzIyQjAwMEQKUldRTkFDc3l0UVljTTRQQXhQWEY2MlhFTHhVeWNoS2d5MERwQ09uVDFOUXNEdnVnMmNoWWRxN2kK"
