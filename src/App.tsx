@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize } from 'lucide-react';
+import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle } from 'lucide-react';
 import tmi from 'tmi.js';
 import confetti from 'canvas-confetti';
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 
 import LEVELS_DATA from './levels.json';
 import { loadStats, saveStats, clearStats } from './lib/persistence';
@@ -123,6 +125,17 @@ export default function App() {
   const [musicVolume, setMusicVolume] = useState(0.3);
   const [settingsTab, setSettingsTab] = useState<'audio' | 'layout' | 'twitch' | 'admin'>('audio');
   const [showSettings, setShowSettings] = useState(false);
+  
+  // Tauri Updater States
+  const [updateStatus, setUpdateStatus] = useState<{
+    version: string;
+    body: string;
+    date: string;
+  } | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+
   const musicRef = useRef<HTMLAudioElement | null>(null);
   const warningRef = useRef<HTMLAudioElement | null>(null);
 
@@ -224,7 +237,63 @@ export default function App() {
         setGlobalStats(saved);
       }
     });
+
+    // Check for updates if running in Tauri
+    const checkForUpdates = async () => {
+      try {
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const update = await check();
+          if (update) {
+            setUpdateStatus({
+              version: update.version,
+              body: update.body || "Nowa wersja jest dostępna!",
+              date: update.date || ""
+            });
+            setShowUpdateModal(true);
+          }
+        }
+      } catch (err) {
+        console.error("Update check failed:", err);
+      }
+    };
+
+    checkForUpdates();
   }, []);
+
+  const handleUpdate = async () => {
+    try {
+      if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+        const update = await check();
+        if (update) {
+          setIsDownloading(true);
+          setDownloadProgress(0);
+          let downloaded = 0;
+          let contentLength = 0;
+          
+          await update.downloadAndInstall((event) => {
+            switch (event.event) {
+              case 'Started':
+                contentLength = event.data.contentLength || 0;
+                break;
+              case 'Progress':
+                downloaded += event.data.chunkLength;
+                if (contentLength > 0) {
+                  setDownloadProgress(Math.round((downloaded / contentLength) * 100));
+                }
+                break;
+              case 'Finished':
+                break;
+            }
+          });
+          
+          await relaunch();
+        }
+      }
+    } catch (err) {
+      console.error("Update failed:", err);
+      setIsDownloading(false);
+    }
+  };
 
   // Save layout settings to localStorage
   useEffect(() => {
@@ -1536,6 +1605,87 @@ export default function App() {
           </button>
         </div>
       )}
+
+      {/* Update Modal */}
+      <AnimatePresence>
+        {showUpdateModal && updateStatus && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 30, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.9, y: 30, opacity: 0 }}
+              className="bg-bg-card border border-white/10 rounded-[2.5rem] max-w-md w-full overflow-hidden shadow-2xl flex flex-col"
+            >
+              <div className="p-8 bg-linear-to-b from-blue-600/20 to-transparent border-b border-white/5 flex flex-col items-center text-center">
+                <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center shadow-[0_0_30px_rgba(37,99,235,0.4)] mb-6 rotate-3">
+                  <Download className="w-10 h-10 text-white" />
+                </div>
+                <h2 className="text-3xl font-black italic tracking-tighter text-white uppercase mb-1">AKTUALIZACJA</h2>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black tracking-widest text-blue-400 uppercase">DOSTĘPNA WERSJA {updateStatus.version}</span>
+                  {updateStatus.date && <span className="text-[10px] font-bold text-white/30 uppercase">({new Date(updateStatus.date).toLocaleDateString()})</span>}
+                </div>
+              </div>
+
+              <div className="p-8 flex-1 overflow-y-auto custom-scrollbar max-h-64">
+                <div className="flex items-center gap-2 mb-4">
+                  <Info className="w-4 h-4 text-white/40" />
+                  <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">CO NOWEGO:</span>
+                </div>
+                <p className="text-sm text-text-secondary leading-relaxed font-medium bg-white/5 p-4 rounded-xl border border-white/5 italic">
+                  {updateStatus.body}
+                </p>
+              </div>
+
+              <div className="p-8 space-y-4">
+                {isDownloading ? (
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-end">
+                      <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> POBIERANIE...
+                      </span>
+                      <span className="text-2xl font-black font-mono text-white">{downloadProgress}%</span>
+                    </div>
+                    <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden border border-white/10 p-0.5">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${downloadProgress}%` }}
+                        className="h-full bg-blue-400 rounded-full shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+                      />
+                    </div>
+                    <p className="text-[9px] text-center text-text-secondary font-bold uppercase opacity-50">APLIKACJA URUCHOMI SIĘ PONOWNIE AUTOMATYCZNIE</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <button 
+                      onClick={handleUpdate}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-5 rounded-2xl font-black tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3"
+                    >
+                      <Download className="w-5 h-5" />
+                      AKTUALIZUJ TERAZ
+                    </button>
+                    <button 
+                      onClick={() => setShowUpdateModal(false)}
+                      className="w-full bg-white/5 hover:bg-white/10 text-white/50 py-4 rounded-2xl font-black text-[10px] tracking-widest uppercase transition-all border border-white/5"
+                    >
+                      MOŻE PÓŹNIEJ
+                    </button>
+                    <div className="flex items-center justify-center gap-2 opacity-30 mt-2">
+                      <AlertTriangle className="w-3 h-3" />
+                      <span className="text-[8px] font-black uppercase tracking-tighter">ZALECANE DLA NAJLEPSZEJ WYDAJNOŚCI</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 
