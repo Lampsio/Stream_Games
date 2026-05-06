@@ -1810,7 +1810,7 @@ export default function App() {
               </div>
 
               <div className="flex justify-center mt-2">
-                <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: 0.1.7</span>
+                <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: 0.1.8</span>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mt-4">
