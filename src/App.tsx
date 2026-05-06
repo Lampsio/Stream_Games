@@ -6,10 +6,11 @@ import confetti from 'canvas-confetti';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 
+import logoImg from './assets/logo-ap.png';
+
 import LEVELS_DATA from './levels.json';
 import { loadStats, saveStats, clearStats } from './lib/persistence';
 import { AUDIO_PATHS } from './constants';
-import logoImg from './assets/logo-ap.png';
 import { FaTwitch } from "react-icons/fa";
 import "./App.css";
 
@@ -123,19 +124,21 @@ export default function App() {
 
   // Audio Settings
   const [soundVolume, setSoundVolume] = useState(0.5);
-  const [musicVolume, setMusicVolume] = useState(0.1);
+  const [musicVolume, setMusicVolume] = useState(0.3);
   const [settingsTab, setSettingsTab] = useState<'audio' | 'layout' | 'twitch' | 'admin'>('audio');
   const [showSettings, setShowSettings] = useState(false);
   
   // Tauri Updater States
   const [updateStatus, setUpdateStatus] = useState<{
     version: string;
-    body: string;
-    date: string;
+    body?: string;
+    date?: string;
   } | null>(null);
+  const updateObjectRef = useRef<any>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   const musicRef = useRef<HTMLAudioElement | null>(null);
   const warningRef = useRef<HTMLAudioElement | null>(null);
@@ -245,16 +248,19 @@ export default function App() {
         if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
           const update = await check();
           if (update) {
+            updateObjectRef.current = update;
             setUpdateStatus({
               version: update.version,
-              body: update.body || "Nowa wersja jest dostępna!",
-              date: update.date || ""
+              body: update.body,
+              date: update.date
             });
             setShowUpdateModal(true);
+            addDebugLog("Update Found", { version: update.version });
           }
         }
       } catch (err) {
         console.error("Update check failed:", err);
+        addDebugLog("Update Check Error", err);
       }
     };
 
@@ -262,37 +268,66 @@ export default function App() {
   }, []);
 
   const handleUpdate = async () => {
+    if (!updateObjectRef.current) return;
+    
     try {
-      if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-        const update = await check();
-        if (update) {
-          setIsDownloading(true);
-          setDownloadProgress(0);
-          let downloaded = 0;
-          let contentLength = 0;
-          
-          await update.downloadAndInstall((event) => {
-            switch (event.event) {
-              case 'Started':
-                contentLength = event.data.contentLength || 0;
-                break;
-              case 'Progress':
-                downloaded += event.data.chunkLength;
-                if (contentLength > 0) {
-                  setDownloadProgress(Math.round((downloaded / contentLength) * 100));
-                }
-                break;
-              case 'Finished':
-                break;
+      setIsDownloading(true);
+      setUpdateError(null);
+      setDownloadProgress(0);
+      
+      let downloaded = 0;
+      let contentLength = 0;
+      
+      addDebugLog("Starting update download", { version: updateObjectRef.current.version });
+      
+      // We'll use download() then install() for more control
+      await updateObjectRef.current.download((event: any) => {
+        switch (event.event) {
+          case 'Started':
+            contentLength = event.data.contentLength || 0;
+            addDebugLog("Update Download Started", { contentLength });
+            break;
+          case 'Progress':
+            downloaded += event.data.chunkLength;
+            if (contentLength > 0) {
+              const progress = Math.round((downloaded / contentLength) * 100);
+              setDownloadProgress(progress);
+              // Avoid spamming logs too much, but log significant progress
+              if (progress % 25 === 0) {
+                addDebugLog("Download Progress", { progress, downloaded, total: contentLength });
+              }
             }
-          });
-          
-          await relaunch();
+            break;
+          case 'Finished':
+            addDebugLog("Update Download Finished", {});
+            break;
         }
-      }
+      });
+      
+      addDebugLog("Installation starting...", {});
+      // install() will return after the installation procedure is started
+      // On Windows, it usually triggers the installer which exits the app.
+      await updateObjectRef.current.install();
+      
+      addDebugLog("Installation command sent, relaunching in 1s if still running...", {});
+      
+      // Delay relaunch slightly to allow the OS to handle the installation process
+      // or to let the app naturally exit if that's what the installer expects.
+      setTimeout(async () => {
+        try {
+          addDebugLog("Triggering manual relaunch...", {});
+          await relaunch();
+        } catch (relaunchErr) {
+          console.error("Relaunch failed:", relaunchErr);
+          addDebugLog("Relaunch Error", relaunchErr);
+        }
+      }, 1000);
+
     } catch (err) {
       console.error("Update failed:", err);
+      setUpdateError("Błąd podczas aktualizacji: " + (err instanceof Error ? err.message : String(err)));
       setIsDownloading(false);
+      addDebugLog("Update Error Detail", err);
     }
   };
 
@@ -1638,9 +1673,15 @@ export default function App() {
                   <Info className="w-4 h-4 text-white/40" />
                   <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">CO NOWEGO:</span>
                 </div>
-                <p className="text-sm text-text-secondary leading-relaxed font-medium bg-white/5 p-4 rounded-xl border border-white/5 italic">
-                  {updateStatus.body}
+                <p className="text-sm text-text-secondary leading-relaxed font-medium bg-white/5 p-4 rounded-xl border border-white/5 italic whitespace-pre-wrap">
+                  {updateStatus.body || "Wersja stabilna z poprawkami wydajności i nowymi funkcjami."}
                 </p>
+                {updateError && (
+                  <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-2 text-red-500 text-[10px] font-bold uppercase tracking-wider">
+                    <AlertCircle className="w-4 h-4" />
+                    {updateError}
+                  </div>
+                )}
               </div>
 
               <div className="p-8 space-y-4">
@@ -1714,7 +1755,7 @@ export default function App() {
           className="z-10 flex flex-col items-center max-w-md w-full text-center"
         >
           {/* Logo Section */}
-           <div className="mb-2 relative group">
+          <div className="mb-2 relative group">
             <motion.img 
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1728,7 +1769,7 @@ export default function App() {
           </div>
 
           <h1 className="text-4xl font-black tracking-tighter mb-2 italic">
-            TWITCH<span className="text-accent-red">SŁÓWKA</span>
+            TWITCH<span className="text-accent-red">GAMER</span>
           </h1>
           <p className="text-text-secondary font-medium tracking-widest text-[10px] uppercase mb-12 opacity-50">
             INTERAKTYWNA WYKREŚLANKA DLA TWOJEGO CZATU
@@ -1769,7 +1810,7 @@ export default function App() {
               </div>
 
               <div className="flex justify-center mt-2">
-                <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: 0.1.6</span>
+                <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: 0.1.1</span>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mt-4">
