@@ -186,7 +186,6 @@ export default function App() {
   const [inputValue, setInputValue] = useState("");
   const [activeChannel, setActiveChannel] = useState("");
   const [messages, setMessages] = useState<ChatLog[]>([]);
-  const chatRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState("Wpisz kanał, aby zacząć");
   const [isConnected, setIsConnected] = useState(false);
 
@@ -242,13 +241,6 @@ export default function App() {
     if (messages.length > 0) {
       const bottom = document.getElementById('chat-bottom');
       bottom?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
-
-  // Auto-scroll chat to bottom
-  useEffect(() => {
-    if (chatRef.current) {
-      chatRef.current.scrollTop = chatRef.current.scrollHeight;
     }
   }, [messages]);
 
@@ -430,37 +422,19 @@ export default function App() {
     
     const timer = setInterval(() => {
       setTimeLeft(prev => {
-        const nextVal = prev - 1;
-        
-        // Play tick sound when time is running low (last 10 seconds)
-        if (nextVal <= 10 && nextVal > 0) {
-          const tickAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3');
-          tickAudio.volume = 0.2;
-          tickAudio.play().catch(() => {});
-        } else if (nextVal === 0) {
-          // Time's up sound
-          const endAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/132/132-preview.mp3');
-          endAudio.volume = 0.3;
-          endAudio.play().catch(() => {});
-        }
-
-        if (nextVal <= 0) {
+        if (prev <= 1) {
           // If time is up, evaluate if the group reached the 70% letter threshold
           const rate = totalLettersRef.current === 0 ? 0 : (foundLettersRef.current / totalLettersRef.current) * 100;
           const isRoundSuccess = rate >= 70;
           processRoundResults(isRoundSuccess);
           return 0;
         }
-        return nextVal;
+        return prev - 1;
       });
     }, 1000);
     
     return () => clearInterval(timer);
-<<<<<<< HEAD
   }, [gameState, isTimeFrozen, processRoundResults]);
-=======
-  }, [gameState, timeLeft, isTimeFrozen, processRoundResults]);
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
 
   // Countdown logic
   useEffect(() => {
@@ -755,11 +729,7 @@ export default function App() {
         color: color,
         isCorrect: isCorrectMessage,
       };
-<<<<<<< HEAD
       setMessages((prev) => [...prev, newMessage].slice(-50));
-=======
-      setMessages((prev) => [...prev, newMessage].slice(-100));
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
       
       if (gameStateRef.current === 'playing') {
         if (guess.length < 3) return;
@@ -2003,9 +1973,8 @@ export default function App() {
           animate={{ opacity: 1, scale: 1 }}
           className="max-w-4xl w-full flex flex-col items-center z-10"
         >
-          <div className="mb-8">
+          <div className="mb-6">
             {isSuccess ? (
-<<<<<<< HEAD
               <div className="flex flex-col items-center">
                  <Trophy className="w-20 h-20 text-yellow-500 mb-2 drop-shadow-[0_0_15px_rgba(234,179,8,0.4)]" />
                  <h2 className="text-4xl font-black italic tracking-tighter text-white uppercase">POZIOM {levelIndex + 1} UKOŃCZONY</h2>
@@ -2025,45 +1994,31 @@ export default function App() {
                       );
                     })()}
 
-=======
-              <div className="flex flex-col items-center scale-110">
-                 <Trophy className="w-24 h-24 text-yellow-500 mb-4 drop-shadow-[0_0_20px_rgba(234,179,8,0.6)]" />
-                 <h2 className="text-6xl font-black italic tracking-tighter text-white uppercase drop-shadow-xl">POZIOM {levelIndex + 1} UKOŃCZONY</h2>
-                 <div className="flex flex-col items-center gap-2 mt-4">
-                    <span className="text-green-500 font-black tracking-[0.3em] text-xl uppercase drop-shadow-md">LITERY: {roundFoundLetters}/{roundTotalLetters} ({roundCompletionRate.toFixed(0)}%)</span>
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
                     {roundCompletionRate >= 100 ? (
                       <motion.div 
                         initial={{ scale: 0.8, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
-                        className="bg-yellow-500 text-bg-main px-6 py-2 rounded-full text-xs font-black tracking-widest border-2 border-yellow-300 animate-pulse shadow-xl"
+                        className="bg-yellow-500/20 text-yellow-400 px-3 py-1 rounded-full text-[10px] font-black tracking-widest border border-yellow-500/30 animate-pulse"
                       >
-                        LEGENDA: +3 POZIOMY! (100%)
+                        BONUS: +3 POZIOMY! (100%)
                       </motion.div>
                     ) : roundCompletionRate >= 85 ? (
                       <motion.div 
                         initial={{ scale: 0.8, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
-                        className="bg-blue-500 text-white px-6 py-2 rounded-full text-xs font-black tracking-widest border-2 border-blue-300 shadow-xl"
+                        className="bg-blue-500/20 text-blue-400 px-3 py-1 rounded-full text-[10px] font-black tracking-widest border border-blue-500/30"
                       >
-                        WYBORNIE: +2 POZIOMY! (85%+)
+                        BONUS: +2 POZIOMY! (85%+)
                       </motion.div>
                     ) : null}
                  </div>
               </div>
             ) : (
-<<<<<<< HEAD
               <div className="flex flex-col items-center">
                  <AlertCircle className="w-20 h-20 text-accent-red mb-2" />
                  <h2 className="text-4xl font-black italic tracking-tighter text-white">PORAŻKA!</h2>
                  <span className="text-accent-red font-black tracking-[0.1em] text-sm uppercase mb-1">KONIEC GRY NA POZIOMIE {levelIndex + 1}</span>
                  <span className="text-text-secondary/50 font-black tracking-[0.2em] text-[10px] uppercase">LITERY: {roundFoundLetters}/{roundTotalLetters} ({roundCompletionRate.toFixed(0)}%)</span>
-=======
-              <div className="flex flex-col items-center scale-110">
-                 <AlertCircle className="w-24 h-24 text-accent-red mb-4 drop-shadow-[0_0_20px_rgba(230,57,70,0.5)]" />
-                 <h2 className="text-6xl font-black italic tracking-tighter text-white drop-shadow-xl">PORAŻKA RUNDY!</h2>
-                 <span className="text-accent-red font-black tracking-[0.3em] text-xl uppercase drop-shadow-md mt-4">LITERY: {foundLettersInLevel}/{totalLettersInLevel} ({roundCompletionRate.toFixed(0)}%)</span>
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
               </div>
             )}
           </div>
@@ -2252,7 +2207,6 @@ export default function App() {
   return (
     <div className="h-screen bg-bg-main text-text-primary font-sans flex flex-col overflow-hidden items-center">
       
-<<<<<<< HEAD
       {/* Letters Section (The Scrambler) */}
       <section className={`w-full h-[240px] flex flex-col items-center justify-center bg-linear-to-b from-bg-card to-bg-main relative transition-all duration-700 overflow-visible z-30 ${isDarknessActive ? 'blur-xl grayscale opacity-30 pointer-events-none scale-110' : ''}`}>
         <div 
@@ -2264,13 +2218,6 @@ export default function App() {
             whiteSpace: 'nowrap'
           }}
         >
-=======
-      <section className={`w-full h-[180px] md:h-[260px] lg:h-[320px] flex flex-col items-center justify-center bg-linear-to-b from-bg-card to-bg-main relative transition-all duration-700 
-        ${isDarknessActive ? 'brightness-[0.2] grayscale opacity-50 scale-105' : ''}
-        ${feedback.type === 'hazard' && feedback.message.includes('SZTORM') ? 'animate-[shake_0.5s_infinite]' : ''}
-      `}>
-        <div className="flex gap-2 sm:gap-4 md:gap-8 px-4 overflow-x-auto scrollbar-hide max-w-full pb-10 md:pb-16 lg:pb-24">
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
           <AnimatePresence mode="popLayout">
             {shuffledLetters.map((item) => {
               const masterWordFound = foundWords.some(fw => fw.word === currentLevel.masterWord);
@@ -2286,23 +2233,12 @@ export default function App() {
                   initial={{ opacity: 0, scale: 0.8, y: 15 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   transition={{ type: "spring", stiffness: 350, damping: 25 }}
-<<<<<<< HEAD
                   className={`flex-shrink-0 w-[70px] h-[70px] md:w-[105px] md:h-[105px] flex items-center justify-center text-4xl md:text-7xl font-black rounded-2xl shadow-[0_10px_0_#b91c1c] uppercase mb-10 border-t border-white/20
                     ${isDecoyRevealed 
                       ? 'bg-[#4a0000] text-red-500 border-2 border-red-900 shadow-[0_10px_0_#2a0000]' 
                       : isHiddenRevealed
                         ? 'bg-yellow-400 text-black border-2 border-yellow-600 shadow-[0_10px_0_#ca8a04]'
                         : masterWordFound ? 'bg-red-600 text-white shadow-[0_10px_0_#7f1d1d]' : 'bg-white text-black'}
-=======
-                  className={`flex-shrink-0 w-[55px] h-[55px] sm:w-[75px] sm:h-[75px] md:w-[110px] md:h-[110px] lg:w-[135px] lg:h-[135px] flex items-center justify-center text-4xl sm:text-5xl md:text-7xl lg:text-8xl font-black rounded-2xl md:rounded-3xl shadow-[0_10px_0_#000000] lg:shadow-[0_15px_0_#000000] uppercase border-4
-                    ${isDecoyRevealed 
-                      ? 'bg-red-950 text-red-500 border-red-800 shadow-[0_10px_0_#2a0000] lg:shadow-[0_15px_0_#2a0000]' 
-                      : isHiddenRevealed
-                        ? 'bg-yellow-400 text-black border-yellow-600 shadow-[0_10px_0_#ca8a04] lg:shadow-[0_15px_0_#ca8a04]'
-                        : masterWordFound 
-                          ? 'bg-accent-red text-white border-white/30' 
-                          : 'bg-white text-black border-neutral-300'}
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
                   `}
                 >
                   {displayChar}
@@ -2313,24 +2249,14 @@ export default function App() {
         </div>
         
         {/* Time Progress Bar (No Digital Clock) */}
-<<<<<<< HEAD
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[95%] max-w-7xl">
           <div className="w-full h-5 bg-black/40 rounded-full border-2 border-white/10 overflow-hidden shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)] flex justify-start relative">
-=======
-        <div className="absolute bottom-4 md:bottom-6 lg:bottom-10 left-1/2 -translate-x-1/2 w-[95%] max-w-[1500px]">
-          <div className="w-full h-5 md:h-8 bg-neutral-900 rounded-full border-2 md:border-4 border-white/20 overflow-hidden shadow-2xl flex justify-start relative">
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
             <motion.div 
               initial={{ width: "100%" }}
               animate={{ width: `${(timeLeft / INITIAL_TIME) * 100}%` }}
               transition={{ duration: 1, ease: "linear" }}
-<<<<<<< HEAD
               className={`h-full rounded-full shadow-[0_0_20px_rgba(230,57,70,0.6)]
                 ${isTimeFrozen ? 'bg-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.8)] animate-pulse' : timeLeft < 30 ? 'bg-red-500 animate-pulse' : 'bg-accent-red'}
-=======
-              className={`h-full rounded-full shadow-[0_0_40px_rgba(230,57,70,0.8)] transition-colors duration-500
-                ${isTimeFrozen ? 'bg-cyan-400 animate-pulse' : timeLeft < 30 ? 'bg-red-500 animate-pulse' : 'bg-accent-red'}
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
               `}
             />
           </div>
@@ -2358,18 +2284,13 @@ export default function App() {
       </section>
 
       {/* Main Gameplay Area with Grid and Chat */}
-<<<<<<< HEAD
       <main className="flex-1 w-full max-w-[1800px] flex gap-10 p-4 md:p-10 overflow-hidden items-stretch h-0">
-=======
-      <main className="flex-1 w-full max-w-full flex flex-col lg:flex-row gap-4 md:gap-8 p-3 md:p-8 lg:p-10 overflow-hidden items-stretch">
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
         
         {/* Answers Grid Section */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between">
+          <div className="flex justify-between items-end mb-4 border-b border-white/5 pb-4">
             <div className="flex flex-col">
               <div className="flex items-center gap-3 mb-1">
-<<<<<<< HEAD
                 <span className="text-[10px] font-black tracking-[0.3em] text-text-secondary uppercase opacity-50">STREFA GRY</span>
               </div>
               <span className="text-7xl font-black tracking-tighter text-accent-red uppercase italic">POZIOM {levelIndex + 1}</span>
@@ -2384,35 +2305,11 @@ export default function App() {
                  <div className="flex flex-col">
                    <span className="text-text-secondary font-black text-3xl opacity-50 leading-none">{targetLetters}</span>
                    <span className="text-[7px] font-black tracking-widest text-text-secondary uppercase opacity-30 mt-0.5">CEL 70%</span>
-=======
-                <span className="text-[10px] md:text-[12px] font-black tracking-[0.4em] text-text-secondary uppercase opacity-70">STREFA ROZGRYWKI</span>
-                <button 
-                  onClick={exitToLobby}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded bg-white/10 hover:bg-accent-red hover:text-white text-text-secondary transition-all group z-50 cursor-pointer border border-white/5"
-                >
-                  <X className="w-2.5 h-2.5 md:w-3 md:h-3" />
-                  <span className="text-[9px] md:text-[10px] font-black uppercase tracking-tighter">OPUŚĆ SESJĘ</span>
-                </button>
-              </div>
-              <span className="text-3xl md:text-4xl lg:text-5xl font-black tracking-tighter text-accent-red uppercase italic drop-shadow-lg leading-tight md:leading-normal">POZIOM {levelIndex + 1}</span>
-            </div>
-            <div className="flex flex-col items-end">
-               <span className="text-[9px] md:text-[11px] font-black tracking-[0.2em] text-text-secondary uppercase opacity-50 mb-1">ZDOBYTE LITERY:</span>
-               <div className="flex items-baseline gap-2">
-                 <span className={`text-2xl md:text-4xl font-black font-mono transition-colors duration-500 drop-shadow-lg ${completionRate >= 70 ? 'text-green-500' : 'text-accent-red'}`}>
-                    {foundLettersInLevel}
-                 </span>
-                 <span className="text-text-secondary font-black text-lg md:text-xl opacity-30">/</span>
-                 <div className="flex flex-col">
-                   <span className="text-text-secondary font-black text-lg md:text-xl opacity-50 leading-none">{targetLetters}</span>
-                   <span className="text-[7px] md:text-[9px] font-black tracking-widest text-text-secondary uppercase opacity-30 mt-0.5">CEL 70%</span>
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
                  </div>
                </div>
             </div>
           </div>
 
-<<<<<<< HEAD
           <div className="flex-1 overflow-y-auto -mr-2 pr-4 pt-4 overflow-x-hidden">
             <div 
               className={`grid ${isCompactLayout ? 'gap-2' : 'gap-4'} h-full content-start transition-all duration-300 ${isDarknessActive ? 'blur-md grayscale opacity-20 pointer-events-none' : ''}`}
@@ -2420,11 +2317,6 @@ export default function App() {
                 gridTemplateColumns: `repeat(${wordCols}, minmax(0, 1fr))`,
                 width: '100%'
               }}
-=======
-          <div className="flex-1 overflow-y-auto pr-2 mt-4 md:mt-10 lg:mt-16 pb-6 md:pb-12 custom-scrollbar">
-            <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 h-full content-start pt-6 md:pt-8 transition-all duration-700 
-              ${isDarknessActive ? 'brightness-[0.1] contrast-150 grayscale blur-xs pointer-events-none' : ''}`}
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
             >
               {possibleAnswers.map((word) => {
                 const foundData = foundWords.find(fw => fw.word === word);
@@ -2439,7 +2331,6 @@ export default function App() {
                       scale: foundData ? 1 : 0.98,
                       y: foundData ? 0 : 2
                     }}
-<<<<<<< HEAD
                     className={`relative flex flex-col items-center justify-center rounded-xl border-2 transition-all duration-300 px-3
                       ${foundData 
                         ? 'bg-accent-red border-accent-red text-white shadow-[0_0_20px_rgba(230,57,70,0.3)]' 
@@ -2455,27 +2346,12 @@ export default function App() {
                         : specialType === 'LEADER_BLOCK' ? 'bg-red-900/20 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]'
                         : specialType === 'SELF_STUN' ? 'bg-pink-900/20 border-pink-500/50 shadow-[0_0_15px_rgba(236,72,153,0.3)]'
                         : 'bg-bg-card/50 border-border-color'
-=======
-                    className={`relative h-20 sm:h-24 md:h-28 flex flex-col items-center justify-center rounded-2xl border-4 transition-all duration-300 px-4
-                      ${foundData 
-                        ? 'bg-accent-red border-white text-white shadow-[0_0_25px_rgba(230,57,70,0.5)]' 
-                        : specialType === 'FREEZE' ? 'bg-blue-600/20 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]'
-                        : specialType === 'GOLD' ? 'bg-yellow-600/20 border-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.3)]'
-                        : specialType === 'TIME' ? 'bg-green-600/20 border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.3)]'
-                        : specialType === 'SCANNER' ? 'bg-cyan-600/20 border-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
-                        : specialType === 'STORM' ? 'bg-orange-600/20 border-orange-500'
-                        : specialType === 'DARKNESS' ? 'bg-purple-600/20 border-purple-500'
-                        : specialType === 'TRAP' ? 'bg-neutral-800 border-red-600'
-                        : specialType === 'MYSTERY' ? 'bg-white/10 border-white skew-x-1'
-                        : 'bg-bg-card/80 border-border-color'
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
                       }
                       ${!foundData && specialType ? 'animate-pulse' : ''}
                     `}
                     style={{ height: `${wordHeight}px` }}
                   >
                     {specialType && !foundData && (
-<<<<<<< HEAD
                       <div className="absolute top-1 right-1 z-20">
                         {specialType === 'FREEZE' && <div className="w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Timer className="w-4 h-4 text-white" /></div>}
                         {specialType === 'GOLD' && <div className="w-7 h-7 bg-yellow-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Trophy className="w-4 h-4 text-white" /></div>}
@@ -2496,40 +2372,14 @@ export default function App() {
                     >
                       {foundData ? word : word.split('').map((char, i) => revealedIndices.includes(i) ? char : '_').join('')}
                       {revealedIndices.length > 0 && !foundData && <Sparkles className="inline-block w-6 h-6 ml-1 text-yellow-500 animate-pulse" />}
-=======
-                      <div className="absolute -top-3 -right-3 md:-top-4 md:-right-4 z-20 scale-110 md:scale-150">
-                        {specialType === 'FREEZE' && <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Timer className="w-3 h-3 text-white" /></div>}
-                        {specialType === 'GOLD' && <div className="w-5 h-5 bg-yellow-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Trophy className="w-3 h-3 text-white" /></div>}
-                        {specialType === 'TIME' && <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Clock className="w-3 h-3 text-white" /></div>}
-                        {specialType === 'SCANNER' && <div className="w-5 h-5 bg-cyan-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Search className="w-3 h-3 text-white" /></div>}
-                        {specialType === 'STORM' && <div className="w-5 h-5 bg-orange-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Wind className="w-3 h-3 text-white" /></div>}
-                        {specialType === 'DARKNESS' && <div className="w-5 h-5 bg-purple-600 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Ghost className="w-3 h-3 text-white" /></div>}
-                        {specialType === 'TRAP' && <div className="w-5 h-5 bg-neutral-700 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Skull className="w-3 h-3 text-white" /></div>}
-                        {specialType === 'MYSTERY' && <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main animate-bounce"><HelpCircle className="w-3.5 h-3.5 text-bg-main" /></div>}
-                      </div>
-                    )}
-                    <div className={`font-black text-xl sm:text-2xl md:text-3xl lg:text-4xl tracking-[0.1em] md:tracking-[0.2em] font-mono drop-shadow-[1px_3px_6px_rgba(0,0,0,0.8)] ${foundData ? 'text-white' : 'text-white'}`}>
-                      {foundData ? word : word.split('').map((char, i) => revealedIndices.includes(i) ? (
-                        <span key={i} className="text-white brightness-150">{char}</span>
-                      ) : (
-                        <span key={i} className="text-accent-red opacity-100 brightness-150">_</span>
-                      ))}
-                      {revealedIndices.length > 0 && !foundData && <Sparkles className="inline-block w-6 h-6 ml-2 text-yellow-400 animate-pulse" />}
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
                     </div>
                     {foundData && (
                       <motion.div 
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
-<<<<<<< HEAD
                         className={`${isCompactLayout ? 'text-[9px]' : 'text-xs'} font-black mt-1 truncate max-w-[95%] opacity-100 px-2 py-0.5 rounded bg-black/60 text-white uppercase tracking-tight flex items-center gap-1.5 shadow-sm border border-white/10`}
                       >
                         <UserBadges username={foundData.user} size="w-3.5 h-3.5" />
-=======
-                        className="text-sm md:text-base font-black mt-3 truncate max-w-[95%] opacity-100 px-3 py-1.5 rounded bg-black/50 text-white uppercase tracking-tighter flex items-center gap-2 shadow-sm border border-white/10"
-                      >
-                        <UserBadges username={foundData.user} size="w-5 h-5 md:w-6 md:h-6" />
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
                         <span className="truncate">{foundData.user}</span>
                       </motion.div>
                     )}
@@ -2540,26 +2390,15 @@ export default function App() {
           </div>
 
           {/* Bottom Feedback Area (No Input) */}
-<<<<<<< HEAD
           <div className="mt-4 h-20 bg-black border-2 border-white/20 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)]">
             <div className="text-base font-black text-white tracking-[0.3em] uppercase flex flex-col items-center gap-1">
               <span className="text-yellow-400 drop-shadow-md">WPISUJ HASŁA NA CZACIE TWITCH</span>
               <div className="flex gap-4">
-=======
-          <div className="mt-4 md:mt-8 h-16 md:h-24 lg:h-28 bg-neutral-900 border-2 border-white/5 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden shadow-2xl mx-1 shrink-0">
-            <div className="text-[10px] md:text-sm font-black text-white/30 tracking-[0.3em] md:tracking-[0.5em] uppercase flex flex-col items-center gap-1 md:gap-3">
-              <span>WPISUJ HASŁA NA CZACIE TWITCH</span>
-              <div className="flex gap-8">
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
                 {levelIndex + 1 >= 10 && (
                   <motion.span 
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-<<<<<<< HEAD
                     className="text-accent-red animate-pulse tracking-widest text-xs"
-=======
-                    className="text-accent-red animate-pulse tracking-widest text-xs font-bold"
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
                   >
                     UWAGA: JEDNA LITERA JEST FAŁSZYWA!
                   </motion.span>
@@ -2568,7 +2407,7 @@ export default function App() {
                   <motion.span 
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="text-yellow-500 animate-pulse tracking-widest text-xs font-bold"
+                    className="text-yellow-500 animate-pulse tracking-widest text-[9px]"
                   >
                     UWAGA: JEDNA LITERA JEST UKRYTA! (?)
                   </motion.span>
@@ -2579,22 +2418,19 @@ export default function App() {
             <AnimatePresence>
               {feedback.type && (
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className={`absolute inset-0 flex items-center justify-center gap-4 z-20 backdrop-blur-xl border-4 border-white/20
-                    ${feedback.type === 'success' ? 'bg-green-600 shadow-[0_0_50px_rgba(22,163,74,0.5)]' : 
-                      feedback.type === 'freeze' ? 'bg-blue-600 shadow-[0_0_50px_rgba(37,99,235,0.5)]' : 
-                      feedback.type === 'hazard' ? 'bg-red-600 shadow-[0_0_50px_rgba(220,38,38,0.5)]' : 
-                      'bg-accent-red shadow-[0_0_50px_rgba(230,57,70,0.5)]'}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className={`absolute inset-0 flex items-center justify-center gap-3 z-10 backdrop-blur-sm
+                    ${feedback.type === 'success' ? 'bg-green-500/10 text-green-500' : 
+                      feedback.type === 'freeze' ? 'bg-blue-500/10 text-blue-400' : 
+                      feedback.type === 'hazard' ? 'bg-red-500/10 text-accent-red' : 'bg-accent-red/10 text-accent-red'}
                   `}
                 >
-                  <div className="text-white text-3xl font-black uppercase tracking-widest drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)] flex items-center gap-5">
-                    {feedback.type === 'success' ? <CheckCircle2 className="w-12 h-12" /> : 
-                     feedback.type === 'freeze' ? <Timer className="w-12 h-12 animate-spin-slow" /> : 
-                     feedback.type === 'hazard' ? <Skull className="w-12 h-12 animate-bounce" /> : <AlertCircle className="w-12 h-12 animate-pulse" />}
-                    {feedback.message}
-                  </div>
+                  {feedback.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : 
+                   feedback.type === 'freeze' ? <Timer className="w-5 h-5 animate-spin-slow" /> : 
+                   feedback.type === 'hazard' ? <Skull className="w-5 h-5 animate-bounce" /> : <AlertCircle className="w-5 h-5" />}
+                  <span className="font-black text-sm tracking-widest uppercase">{feedback.message}</span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -2602,27 +2438,22 @@ export default function App() {
         </div>
 
         {/* Side Chat Panel */}
-<<<<<<< HEAD
         <aside className="w-96 hidden lg:flex flex-col bg-bg-card border border-border-color rounded-2xl overflow-hidden shadow-2xl">
-=======
-        <aside className="w-full lg:w-72 xl:w-[450px] flex flex-col bg-bg-card border border-border-color rounded-2xl overflow-hidden shadow-2xl h-[300px] lg:h-auto shrink-0">
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
           {/* Consolidated Channel & Chat Header */}
-          <div className="p-4 border-b border-border-color bg-neutral-900/50 flex flex-col gap-3">
+          <div className="p-4 border-b border-border-color bg-neutral-900/50 flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <FaTwitch className={`w-5 h-5 ${isConnected ? 'text-purple-500 fill-purple-500' : 'text-neutral-700'}`} />
-                <span className="text-xs font-black tracking-[0.2em] text-text-secondary uppercase">TWITCH CHAT</span>
+                <FaTwitch className={`w-4 h-4 ${isConnected ? 'text-purple-500 fill-purple-500' : 'text-neutral-700'}`} />
+                <span className="text-[10px] font-black tracking-widest text-text-secondary uppercase">TWITCH CHAT</span>
               </div>
-              <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-neutral-700'}`} />
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-neutral-700'}`} />
             </div>
-            <div className="flex items-center justify-between bg-bg-main/50 px-4 py-2 rounded-xl border border-border-color shadow-inner">
-              <span className="text-[10px] font-bold text-text-secondary uppercase opacity-70">KANAŁ:</span>
-              <span className="text-sm font-black text-purple-400 uppercase tracking-tight">{activeChannel}</span>
+            <div className="flex items-center justify-between bg-bg-main/50 px-3 py-1.5 rounded-lg border border-border-color">
+              <span className="text-[9px] font-bold text-text-secondary uppercase opacity-70">KANAŁ:</span>
+              <span className="text-[11px] font-black text-purple-500 uppercase tracking-tighter">{activeChannel}</span>
             </div>
           </div>
 
-<<<<<<< HEAD
           <div className="flex-1 p-4 overflow-y-auto space-y-2 custom-scrollbar flex flex-col">
             {messages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center space-y-2 opacity-30">
@@ -2658,32 +2489,6 @@ export default function App() {
                 ))}
                 <div id="chat-bottom" />
               </>
-=======
-          <div 
-            ref={chatRef}
-            className="flex-1 overflow-y-auto custom-scrollbar flex flex-col bg-black/10 scroll-smooth"
-          >
-            {messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-4 opacity-30">
-                <FaTwitch className="w-12 h-12" />
-                <span className="text-sm font-black tracking-widest uppercase">CZEKAM NA WIADOMOŚCI...</span>
-              </div>
-            ) : (
-              messages.map((msg, idx) => (
-                <motion.div 
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  key={msg.id} 
-                  className={`px-4 py-3 text-sm break-words border-b border-white/5 last:border-0 ${idx === messages.length - 1 ? 'bg-white/5' : ''}`}
-                >
-                  <div className="inline-flex items-baseline flex-wrap gap-x-2">
-                    <UserBadges username={msg.username} size="w-4 h-4" />
-                    <span className="font-black text-base drop-shadow-sm" style={{ color: msg.color }}>{msg.username}:</span>
-                    <span className="text-white font-bold">{msg.message}</span>
-                  </div>
-                </motion.div>
-              ))
->>>>>>> 4eb5556d37a4e8d0ea8920640adce33fa4a3299a
             )}
           </div>
         </aside>
@@ -2705,19 +2510,6 @@ export default function App() {
         }
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
-        }
-        @keyframes shake {
-          0% { transform: translate(1px, 1px) rotate(0deg); }
-          10% { transform: translate(-1px, -2px) rotate(-1deg); }
-          20% { transform: translate(-3px, 0px) rotate(1deg); }
-          30% { transform: translate(3px, 2px) rotate(0deg); }
-          40% { transform: translate(1px, -1px) rotate(1deg); }
-          50% { transform: translate(-1px, 2px) rotate(-1deg); }
-          60% { transform: translate(-3px, 1px) rotate(0deg); }
-          70% { transform: translate(3px, 1px) rotate(-1deg); }
-          80% { transform: translate(-1px, -1px) rotate(1deg); }
-          90% { transform: translate(1px, 2px) rotate(0deg); }
-          100% { transform: translate(1px, -2px) rotate(-1deg); }
         }
       `}} />
 
