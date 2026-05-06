@@ -9,6 +9,7 @@ import { relaunch } from '@tauri-apps/plugin-process';
 import LEVELS_DATA from './levels.json';
 import { loadStats, saveStats, clearStats } from './lib/persistence';
 import { AUDIO_PATHS } from './constants';
+import logoImg from './assets/logo-ap.png';
 import { FaTwitch } from "react-icons/fa";
 import "./App.css";
 
@@ -122,7 +123,7 @@ export default function App() {
 
   // Audio Settings
   const [soundVolume, setSoundVolume] = useState(0.5);
-  const [musicVolume, setMusicVolume] = useState(0.3);
+  const [musicVolume, setMusicVolume] = useState(0.1);
   const [settingsTab, setSettingsTab] = useState<'audio' | 'layout' | 'twitch' | 'admin'>('audio');
   const [showSettings, setShowSettings] = useState(false);
   
@@ -1713,17 +1714,21 @@ export default function App() {
           className="z-10 flex flex-col items-center max-w-md w-full text-center"
         >
           {/* Logo Section */}
-          <div className="mb-8 relative">
-            <div className="w-24 h-24 bg-accent-red rounded-3xl flex items-center justify-center shadow-[0_0_30px_rgba(230,57,70,0.3)] rotate-6">
-              <FaTwitch className="w-12 h-12 text-white fill-white" />
-            </div>
-            <div className="absolute -bottom-2 -right-2 w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg -rotate-12 border-2 border-accent-red">
-              <Sparkles className="w-6 h-6 text-accent-red" />
-            </div>
+           <div className="mb-2 relative group">
+            <motion.img 
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              src={logoImg} 
+              alt="Logo" 
+              className="w-64 h-64 object-contain drop-shadow-[0_0_25px_rgba(230,57,70,0.4)] transition-all duration-500 group-hover:scale-105"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
           </div>
 
           <h1 className="text-4xl font-black tracking-tighter mb-2 italic">
-            TWITCH<span className="text-accent-red">GAMER</span>
+            TWITCH<span className="text-accent-red">SŁÓWKA</span>
           </h1>
           <p className="text-text-secondary font-medium tracking-widest text-[10px] uppercase mb-12 opacity-50">
             INTERAKTYWNA WYKREŚLANKA DLA TWOJEGO CZATU
@@ -1764,7 +1769,7 @@ export default function App() {
               </div>
 
               <div className="flex justify-center mt-2">
-                <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: 0.1.1</span>
+                <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: 0.1.6</span>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mt-4">
