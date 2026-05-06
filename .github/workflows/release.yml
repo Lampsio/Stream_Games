@@ -49,11 +49,3 @@ jobs:
           releaseBody: "See the assets below to download the latest version."
           releaseDraft: true
           prerelease: false
-
-      - name: display signatures
-        if: matrix.platform == 'windows-latest'
-        shell: bash
-        run: |
-          echo "=== SIGNATURE FOR WINDOWS EXE ==="
-          cat src-tauri/target/release/bundle/nsis/*.sig
-          echo "=============================="
