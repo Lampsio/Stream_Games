@@ -32,7 +32,6 @@
       },
       "nsis": {
         "oneClick": true,
-        "perMachine": false,
         "allowElevation": true,
         "installerIcon": "icons/icon.ico",
         "installMode": "currentUser"
