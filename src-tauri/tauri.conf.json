@@ -29,10 +29,6 @@
       "wix": {
         "language": "pl-PL",
         "upgradeCode": "3645091c-9993-4e44-8975-f93509b5550a"
-      },
-      "nsis": {
-        "oneClick": true,
-        "installMode": "currentUser"
       }
     },
     "icon": [
