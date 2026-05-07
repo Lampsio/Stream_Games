@@ -89,7 +89,10 @@ export default function App() {
   const [isTimeFrozen, setIsTimeFrozen] = useState(false);
   const [isDarknessActive, setIsDarknessActive] = useState(false);
   const [showRoundWords, setShowRoundWords] = useState(false);
-  const [playedMasterWords, setPlayedMasterWords] = useState<string[]>([]);
+  const [playedMasterWords, setPlayedMasterWords] = useState<string[]>(() => {
+    const saved = localStorage.getItem('playedMasterWords');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [statsTab, setStatsTab] = useState<'world' | 'points' | 'rounds' | 'games' | 'masters' | 'streaks' | 'shields'>('world');
   const [blockedPlayer, setBlockedPlayer] = useState<{ username: string; expiresAt: number } | null>(null);
   
@@ -209,13 +212,19 @@ export default function App() {
   const [isConnected, setIsConnected] = useState(false);
 
   const generateLevelSequence = useCallback(() => {
-    // Filter out already played words
+    // History Management: We want to exclude words seen in previous games
+    // Filter out already played words from the total pool
     let availableIndices = LEVELS.map((_, i) => i).filter(i => !playedMasterWords.includes(LEVELS[i].masterWord));
     
-    // If we've played everything or almost everything, reset the pool
-    if (availableIndices.length < 5) {
-      setPlayedMasterWords([]);
-      availableIndices = LEVELS.map((_, i) => i);
+    // If we've played a significant portion (e.g., > 80% of pool or less than 10 words left),
+    // we clear the history to allow words back in, but we always try to avoid the absolute last few.
+    if (availableIndices.length < 10) {
+      // Keep only the last 5 words in history to avoid immediate repetition even after reset
+      const recentHistory = playedMasterWords.slice(-5);
+      setPlayedMasterWords(recentHistory);
+      availableIndices = LEVELS.map((_, i) => i).filter(i => !recentHistory.includes(LEVELS[i].masterWord));
+      
+      addDebugLog("Word rotation reset", { remainingWords: availableIndices.length });
     }
 
     const sevenLetterIndices = availableIndices.filter(i => LEVELS[i].masterWord.length === 7);
@@ -224,14 +233,16 @@ export default function App() {
     const shuffledSeven = [...sevenLetterIndices].sort(() => Math.random() - 0.5);
     const shuffledOthers = [...otherIndices].sort(() => Math.random() - 0.5);
     
-    // First few levels should be 7-letter words if possible
-    const firstCount = Math.min(shuffledSeven.length, 7);
+    // Mix and match to create a progression (easier 7-letter words first)
+    const firstCount = Math.min(shuffledSeven.length, 5);
     const firstPart = shuffledSeven.slice(0, firstCount);
     const remainingSeven = shuffledSeven.slice(firstCount);
     const secondPart = [...shuffledOthers, ...remainingSeven].sort(() => Math.random() - 0.5);
     
-    return [...firstPart, ...secondPart];
-  }, [playedMasterWords]);
+    const finalSequence = [...firstPart, ...secondPart];
+    addDebugLog("Generated new level sequence", { length: finalSequence.length });
+    return finalSequence;
+  }, [playedMasterWords, addDebugLog]);
 
   // Initialize random level sequence and load stats
   useEffect(() => {
@@ -342,7 +353,7 @@ export default function App() {
     }
   };
 
-  // Save layout settings to localStorage
+  // Save layout and word history settings to localStorage
   useEffect(() => {
     localStorage.setItem('wordScale', wordScale.toString());
     localStorage.setItem('diceScale', diceScale.toString());
@@ -350,7 +361,8 @@ export default function App() {
     localStorage.setItem('wordCols', wordCols.toString());
     localStorage.setItem('wordHeight', wordHeight.toString());
     localStorage.setItem('isCompactLayout', isCompactLayout.toString());
-  }, [wordScale, diceScale, diceSpacing, wordCols, wordHeight, isCompactLayout]);
+    localStorage.setItem('playedMasterWords', JSON.stringify(playedMasterWords));
+  }, [wordScale, diceScale, diceSpacing, wordCols, wordHeight, isCompactLayout, playedMasterWords]);
 
   // Auto-scroll chat to bottom
   useEffect(() => {
