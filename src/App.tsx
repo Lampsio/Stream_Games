@@ -5,6 +5,7 @@ import tmi from 'tmi.js';
 import confetti from 'canvas-confetti';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { getVersion } from '@tauri-apps/api/app';
 
 import logoImg from './assets/logo-ap.png';
 
@@ -107,24 +108,25 @@ export default function App() {
   });
   const [wordCols, setWordCols] = useState(() => {
     const saved = localStorage.getItem('wordCols');
-    return saved ? parseInt(saved) : 3;
+    return saved ? parseInt(saved) : 4;
   });
   const [wordHeight, setWordHeight] = useState(() => {
     const saved = localStorage.getItem('wordHeight');
-    return saved ? parseInt(saved) : 96; // Default 24rem (96px)
+    return saved ? parseInt(saved) : 75; // Default 24rem (96px)
   });
   const [isCompactLayout, setIsCompactLayout] = useState(() => {
     const saved = localStorage.getItem('isCompactLayout');
     return saved === 'true';
   });
 
+  const [appVersion, setAppVersion] = useState('0.1.1');
   const [timeLeft, setTimeLeft] = useState(INITIAL_TIME);
   const [hints, setHints] = useState<Record<string, number[]>>({}); // word: revealedIndices[]
   const [lastActionTime, setLastActionTime] = useState(Date.now());
 
   // Audio Settings
   const [soundVolume, setSoundVolume] = useState(0.5);
-  const [musicVolume, setMusicVolume] = useState(0.3);
+  const [musicVolume, setMusicVolume] = useState(0.1);
   const [settingsTab, setSettingsTab] = useState<'audio' | 'layout' | 'twitch' | 'admin'>('audio');
   const [showSettings, setShowSettings] = useState(false);
   
@@ -235,6 +237,19 @@ export default function App() {
   useEffect(() => {
     setLevelSequence(generateLevelSequence());
 
+    // Fetch version from Tauri if available
+    const fetchVersion = async () => {
+      try {
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const version = await getVersion();
+          setAppVersion(version);
+        }
+      } catch (err) {
+        console.error("Failed to get version:", err);
+      }
+    };
+    fetchVersion();
+
     // Load stats from Persistence Service (Tauri Store or localStorage)
     loadStats().then(saved => {
       if (saved) {
@@ -306,22 +321,18 @@ export default function App() {
       
       addDebugLog("Installation starting...", {});
       // install() will return after the installation procedure is started
-      // On Windows, it usually triggers the installer which exits the app.
       await updateObjectRef.current.install();
       
-      addDebugLog("Installation command sent, relaunching in 1s if still running...", {});
+      addDebugLog("Installation command sent, relaunching in 1s...", {});
       
-      // Delay relaunch slightly to allow the OS to handle the installation process
-      // or to let the app naturally exit if that's what the installer expects.
+      // On Windows, the installer might take over, but we signal relaunch just in case
       setTimeout(async () => {
         try {
-          addDebugLog("Triggering manual relaunch...", {});
           await relaunch();
-        } catch (relaunchErr) {
-          console.error("Relaunch failed:", relaunchErr);
-          addDebugLog("Relaunch Error", relaunchErr);
+        } catch (e) {
+          addDebugLog("Relaunch skipped - likely installer is running", e);
         }
-      }, 1000);
+      }, 1500);
 
     } catch (err) {
       console.error("Update failed:", err);
@@ -1734,7 +1745,7 @@ export default function App() {
   // --- LOBBY SCREEN ---
   if (gameState === 'lobby') {
     return (
-      <div className="h-screen bg-bg-main text-text-primary font-sans flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <div className="min-h-screen bg-bg-main text-text-primary font-sans flex flex-col items-center p-6 pt-16 pb-16 relative overflow-y-auto custom-scrollbar">
         {/* Animated background accents */}
         <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-accent-red/5 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl animate-pulse delay-700" />
@@ -1810,7 +1821,7 @@ export default function App() {
               </div>
 
               <div className="flex justify-center mt-2">
-                <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: 0.1.8</span>
+                <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: {appVersion}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mt-4">
@@ -1894,7 +1905,7 @@ export default function App() {
     };
 
     return (
-      <div className="h-screen bg-bg-main text-text-primary font-sans flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <div className="min-h-screen bg-bg-main text-text-primary font-sans flex flex-col items-center p-6 pt-16 pb-16 relative overflow-y-auto custom-scrollbar">
         {/* Reset Confirmation Overlay */}
         <AnimatePresence>
           {showResetConfirm && (
@@ -2163,7 +2174,7 @@ export default function App() {
     const sortedGlobal = (Object.entries(sessionScores) as [string, number][]).sort((a, b) => b[1] - a[1]);
 
     return (
-      <div className="h-screen bg-bg-main text-text-primary font-sans flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      <div className="min-h-screen bg-bg-main text-text-primary font-sans flex flex-col items-center p-4 pt-16 pb-16 relative overflow-y-auto custom-scrollbar">
         <motion.div 
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
