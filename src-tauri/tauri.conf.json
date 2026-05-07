@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "TwitchSłówka",
+  "productName": "slowka",
   "version": "0.2.0",
   "identifier": "com.daniel.words",
   "build": {
@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "Słowka",
-        "width": 1400,
-        "height": 900
+        "width": 1200,
+        "height": 800
       }
     ],
     "security": {
@@ -25,12 +25,6 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
-    "windows": {
-      "wix": {
-        "language": "pl-PL",
-        "upgradeCode": "3645091c-9993-4e44-8975-f93509b5550a"
-      }
-    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
