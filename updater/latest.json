@@ -1,6 +1,6 @@
 {
-  "version": "0.2.0",
-  "notes": "Nowy System zarządzania bazą słówke",
+  "version": "0.2.1",
+  "notes": "Ulepszony System oraz UI",
   "pub_date": "2026-05-07T18:00:04.730Z",
   "platforms": {
     "darwin-aarch64": {

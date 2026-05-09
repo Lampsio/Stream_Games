@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle, Plus, FastForward } from 'lucide-react';
 import tmi from 'tmi.js';
 import confetti from 'canvas-confetti';
 import { check } from '@tauri-apps/plugin-updater';
@@ -122,6 +122,9 @@ export default function App() {
     return saved === 'true';
   });
 
+  const [showDevPanel, setShowDevPanel] = useState(false);
+  const [isDevAuthorized, setIsDevAuthorized] = useState(false);
+  const [devPasswordInput, setDevPasswordInput] = useState("");
   const [appVersion, setAppVersion] = useState('0.1.1');
   const [timeLeft, setTimeLeft] = useState(INITIAL_TIME);
   const [hints, setHints] = useState<Record<string, number[]>>({}); // word: revealedIndices[]
@@ -130,7 +133,7 @@ export default function App() {
   // Audio Settings
   const [soundVolume, setSoundVolume] = useState(0.5);
   const [musicVolume, setMusicVolume] = useState(0.1);
-  const [settingsTab, setSettingsTab] = useState<'audio' | 'layout' | 'twitch' | 'admin'>('audio');
+  const [settingsTab, setSettingsTab] = useState<'audio' | 'layout' | 'twitch' | 'admin' | 'developer'>('audio');
   const [showSettings, setShowSettings] = useState(false);
   
   // Tauri Updater States
@@ -216,11 +219,11 @@ export default function App() {
     // Filter out already played words from the total pool
     let availableIndices = LEVELS.map((_, i) => i).filter(i => !playedMasterWords.includes(LEVELS[i].masterWord));
     
-    // If we've played a significant portion (e.g., > 80% of pool or less than 10 words left),
+    // If we've played a significant portion (e.g., > 90% of pool or less than 5 words left),
     // we clear the history to allow words back in, but we always try to avoid the absolute last few.
-    if (availableIndices.length < 10) {
-      // Keep only the last 5 words in history to avoid immediate repetition even after reset
-      const recentHistory = playedMasterWords.slice(-5);
+    if (availableIndices.length < 5) {
+      // Keep only the last 10 words in history to avoid immediate repetition even after reset
+      const recentHistory = playedMasterWords.slice(-10);
       setPlayedMasterWords(recentHistory);
       availableIndices = LEVELS.map((_, i) => i).filter(i => !recentHistory.includes(LEVELS[i].masterWord));
       
@@ -603,18 +606,28 @@ export default function App() {
         isHidden: false
       }));
       
-      // Add hidden letter logic from level 16 onwards
+      // Add hidden letter logic
       if (levelIndex + 1 >= 16) {
-        const randomIndex = Math.floor(Math.random() * letters.length);
-        letters[randomIndex].isHidden = true;
+        const hiddenCount = levelIndex + 1 >= 30 ? 2 : 1;
+        const availableIndices = Array.from({ length: letters.length }, (_, i) => i);
+        
+        for (let i = 0; i < hiddenCount; i++) {
+          if (availableIndices.length === 0) break;
+          const randomIndexIdx = Math.floor(Math.random() * availableIndices.length);
+          const lettersIdx = availableIndices.splice(randomIndexIdx, 1)[0];
+          letters[lettersIdx].isHidden = true;
+        }
       }
       
       // Add decoy letter from level 10 onwards
       if (levelIndex + 1 >= 10) {
+        const decoyCount = levelIndex + 1 >= 45 ? 2 : 1;
         const alphabet = "AĄBCĆDEĘFGHIJKLŁMNŃOÓPRSŚTUWYZŹŻ";
-        const randomChar = alphabet[Math.floor(Math.random() * alphabet.length)];
-        const decoy: Letter = { id: Math.random(), char: randomChar, isDecoy: true, isHidden: false };
-        letters.push(decoy);
+        for (let i = 0; i < decoyCount; i++) {
+          const randomChar = alphabet[Math.floor(Math.random() * alphabet.length)];
+          const decoy: Letter = { id: Math.random(), char: randomChar, isDecoy: true, isHidden: false };
+          letters.push(decoy);
+        }
       }
       lettersPoolRef.current = letters;
 
@@ -1197,6 +1210,12 @@ export default function App() {
                     >
                       UKŁAD
                     </button>
+                    <button 
+                      onClick={() => setSettingsTab('developer')}
+                      className={`px-6 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all ${settingsTab === 'developer' ? 'bg-white/15 text-white' : 'text-white/30 hover:text-white'}`}
+                    >
+                      DEV
+                    </button>
                   </div>
                   <button 
                     onClick={() => setShowSettings(false)}
@@ -1370,6 +1389,62 @@ export default function App() {
                       <div className={`w-12 h-6 rounded-full p-1 transition-all ${isCompactLayout ? 'bg-accent-red' : 'bg-neutral-800'}`}>
                         <div className={`w-4 h-4 bg-white rounded-full transition-all ${isCompactLayout ? 'translate-x-6' : 'translate-x-0'}`} />
                       </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {settingsTab === 'developer' && (
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="space-y-8 flex flex-col items-center justify-center py-10">
+                    <div className="text-center space-y-4 max-w-sm">
+                      <div className="w-16 h-16 bg-white/5 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-white/10 shadow-2xl">
+                        <ShieldCheck className={`w-8 h-8 ${isDevAuthorized ? 'text-green-400' : 'text-text-secondary opacity-20'}`} />
+                      </div>
+                      
+                      {isDevAuthorized ? (
+                        <div className="space-y-4">
+                          <h3 className="text-xl font-black text-white italic tracking-tighter">DOSTĘP AUTORYZOWANY</h3>
+                          <p className="text-[10px] font-bold text-green-400/60 uppercase tracking-widest">Narzędzia deweloperskie są teraz aktywne w rogu ekranu.</p>
+                          <button 
+                            onClick={() => setIsDevAuthorized(false)}
+                            className="bg-white/5 hover:bg-accent-red text-white px-6 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all"
+                          >
+                            WYLOGUJ Z TRYBU DEV
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <h3 className="text-xl font-black text-white italic tracking-tighter">TRYB DEWELOPERSKI</h3>
+                          <p className="text-[10px] font-bold text-text-secondary/40 uppercase tracking-widest">Wpisz hasło, aby odblokować narzędzia testowe.</p>
+                          
+                          <div className="relative group">
+                            <input 
+                              type="password"
+                              placeholder="HASŁO..."
+                              value={devPasswordInput}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setDevPasswordInput(val);
+                                if (val === "Gr54@gmhy453") {
+                                  setIsDevAuthorized(true);
+                                  setDevPasswordInput("");
+                                }
+                              }}
+                              className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-4 text-center text-sm font-mono tracking-[0.3em] focus:border-accent-red outline-none transition-all placeholder:text-white/10"
+                            />
+                            <div className="absolute inset-0 rounded-2xl bg-accent-red/20 opacity-0 group-hover:opacity-10 pointer-events-none transition-opacity" />
+                          </div>
+
+                          {devPasswordInput.length > 0 && devPasswordInput !== "Gr54@gmhy453" && (
+                            <motion.p 
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              className="text-[9px] font-black text-accent-red uppercase tracking-widest"
+                            >
+                              BŁĘDNE HASŁO
+                            </motion.p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -2423,49 +2498,68 @@ export default function App() {
     );
   }
 
+  const masterWordFound = foundWords.some(fw => fw.word === currentLevel.masterWord);
+  const decoyItems = shuffledLetters.filter(l => l.isDecoy);
+  const hiddenItems = shuffledLetters.filter(l => l.isHidden);
+
   return (
     <div className="h-screen bg-bg-main text-text-primary font-sans flex flex-col overflow-hidden items-center">
       
       {/* Letters Section (The Scrambler) */}
       <section className={`w-full h-[240px] flex flex-col items-center justify-center bg-linear-to-b from-bg-card to-bg-main relative transition-all duration-700 overflow-visible z-30 ${isDarknessActive ? 'blur-xl grayscale opacity-30 pointer-events-none scale-110' : ''}`}>
-        <div 
-          className="flex px-4 transition-transform duration-300 overflow-visible"
-          style={{ 
-            transform: `scale(${diceScale})`, 
-            transformOrigin: 'center center',
-            gap: `${diceSpacing}px`,
-            whiteSpace: 'nowrap'
-          }}
-        >
-          <AnimatePresence mode="popLayout">
-            {shuffledLetters.map((item) => {
-              const masterWordFound = foundWords.some(fw => fw.word === currentLevel.masterWord);
-              const isDecoyRevealed = item.isDecoy && (masterWordFound || timeLeft < 30);
-              const isHiddenRevealed = item.isHidden && (masterWordFound || timeLeft < 30);
-              
-              const displayChar = (item.isHidden && !isHiddenRevealed) ? "?" : item.char;
-              
-              return (
-                <motion.div
-                  key={item.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.8, y: 15 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  transition={{ type: "spring", stiffness: 350, damping: 25 }}
-                  className={`flex-shrink-0 w-[70px] h-[70px] md:w-[105px] md:h-[105px] flex items-center justify-center text-4xl md:text-7xl font-black rounded-2xl shadow-[0_10px_0_#b91c1c] uppercase mb-10 border-t border-white/20
-                    ${isDecoyRevealed 
-                      ? 'bg-[#4a0000] text-red-500 border-2 border-red-900 shadow-[0_10px_0_#2a0000]' 
-                      : isHiddenRevealed
-                        ? 'bg-yellow-400 text-black border-2 border-yellow-600 shadow-[0_10px_0_#ca8a04]'
-                        : masterWordFound ? 'bg-red-600 text-white shadow-[0_10px_0_#7f1d1d]' : 'bg-white text-black'}
-                  `}
-                >
-                  {displayChar}
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </div>
+          <div 
+            className="flex flex-wrap justify-center items-center px-4 transition-transform duration-300 overflow-visible max-w-full"
+            style={{ 
+              transform: `scale(${diceScale})`, 
+              transformOrigin: 'center center',
+              gap: `${shuffledLetters.length > 10 ? diceSpacing / 2 : diceSpacing}px`,
+            }}
+          >
+            <AnimatePresence mode="popLayout">
+              {shuffledLetters.map((item) => {
+                const masterWordFound = foundWords.some(fw => fw.word === currentLevel.masterWord);
+                const isDecoyRevealed = item.isDecoy && (masterWordFound || timeLeft < 30);
+                const isHiddenRevealed = item.isHidden && (masterWordFound || timeLeft < 30);
+                
+                const displayChar = (item.isHidden && !isHiddenRevealed) ? "?" : item.char;
+                
+                // Dynamic sizing logic based on word length
+                const isLongWord = shuffledLetters.length > 8;
+                const isVeryLongWord = shuffledLetters.length > 10;
+                
+                const tileSizeClass = isVeryLongWord 
+                  ? 'w-[50px] h-[50px] md:w-[75px] md:h-[75px] text-2xl md:text-5xl mb-6' 
+                  : isLongWord 
+                    ? 'w-[60px] h-[60px] md:w-[85px] md:h-[85px] text-3xl md:text-6xl mb-8'
+                    : 'w-[70px] h-[70px] md:w-[105px] md:h-[105px] text-4xl md:text-7xl mb-10';
+
+                const shadowClass = isDecoyRevealed 
+                  ? (isVeryLongWord ? 'shadow-[0_6px_0_#2a0000]' : isLongWord ? 'shadow-[0_8px_0_#2a0000]' : 'shadow-[0_10px_0_#2a0000]')
+                  : isHiddenRevealed
+                    ? (isVeryLongWord ? 'shadow-[0_6px_0_#ca8a04]' : isLongWord ? 'shadow-[0_8px_0_#ca8a04]' : 'shadow-[0_10px_0_#ca8a04]')
+                    : (isVeryLongWord ? 'shadow-[0_6px_0_#b91c1c]' : isLongWord ? 'shadow-[0_8px_0_#b91c1c]' : 'shadow-[0_10px_0_#b91c1c]');
+
+                return (
+                  <motion.div
+                    key={item.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.8, y: 15 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                    className={`flex-shrink-0 flex items-center justify-center font-black rounded-2xl uppercase border-t border-white/20 transition-all ${tileSizeClass}
+                      ${isDecoyRevealed 
+                        ? 'bg-[#4a0000] text-red-500 border-2 border-red-900 ' + shadowClass
+                        : isHiddenRevealed
+                          ? 'bg-yellow-400 text-black border-2 border-yellow-600 ' + shadowClass
+                          : 'bg-white text-black ' + shadowClass}
+                    `}
+                  >
+                    {displayChar}
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
         
         {/* Time Progress Bar (No Digital Clock) */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[95%] max-w-7xl">
@@ -2607,31 +2701,53 @@ export default function App() {
               })}
             </div>
           </div>
+        </div>
 
-          {/* Bottom Feedback Area (No Input) */}
-          <div className="mt-4 h-20 bg-black border-2 border-white/20 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)]">
-            <div className="text-base font-black text-white tracking-[0.3em] uppercase flex flex-col items-center gap-1">
-              <span className="text-yellow-400 drop-shadow-md">WPISUJ HASŁA NA CZACIE TWITCH</span>
-              <div className="flex gap-4">
-                {levelIndex + 1 >= 10 && (
-                  <motion.span 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="text-accent-red animate-pulse tracking-widest text-xs"
-                  >
-                    UWAGA: JEDNA LITERA JEST FAŁSZYWA!
-                  </motion.span>
-                )}
-                {levelIndex + 1 >= 16 && (
-                  <motion.span 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="text-yellow-500 animate-pulse tracking-widest text-[9px]"
-                  >
-                    UWAGA: JEDNA LITERA JEST UKRYTA! (?)
-                  </motion.span>
-                )}
-              </div>
+        {/* Side Chat Panel */}
+        <aside className="w-96 hidden lg:flex flex-col bg-[#18181b] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          {/* Top Instruction & Feedback Area (MOVED FROM BOTTOM) */}
+          <div className="h-28 bg-[#1f1f23] border-b border-white/10 flex flex-col items-center justify-center relative overflow-hidden shadow-lg shrink-0">
+            <div className="w-full h-full flex flex-col items-center justify-center px-4 text-center">
+              {(levelIndex + 1 >= 10 || levelIndex + 1 >= 16) ? (
+                <div className="flex flex-col gap-2">
+                  {levelIndex + 1 >= 10 && (
+                    <motion.span 
+                      key={`false-${masterWordFound}`}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className={`${masterWordFound ? 'text-green-400' : 'text-accent-red'} font-black animate-pulse tracking-[0.1em] text-sm uppercase drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]`}
+                    >
+                      {masterWordFound 
+                        ? decoyItems.length > 1
+                          ? `✅ LITERY "${decoyItems.map(d => d.char).join(', ')}" BYŁY FAŁSZYWE!`
+                          : `✅ LITERA "${decoyItems[0]?.char}" BYŁA FAŁSZYWA!` 
+                        : levelIndex + 1 >= 45 
+                          ? "⚠️ DWIE LITERY SĄ FAŁSZYWE!" 
+                          : "⚠️ JEDNA LITERA JEST FAŁSZYWA!"}
+                    </motion.span>
+                  )}
+                  {levelIndex + 1 >= 16 && (
+                    <motion.span 
+                      key={`hidden-${masterWordFound}`}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className={`${masterWordFound ? 'text-yellow-300' : 'text-yellow-400'} font-black animate-pulse tracking-[0.1em] text-sm uppercase drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]`}
+                    >
+                      {masterWordFound 
+                        ? hiddenItems.length > 1 
+                          ? `✅ LITERY "${hiddenItems.map(h => h.char).join(', ')}" BYŁY UKRYTE!`
+                          : `✅ LITERA "${hiddenItems[0]?.char}" BYŁA UKRYTA!` 
+                        : levelIndex + 1 >= 30 
+                          ? "❓ DWIE LITERY SĄ UKRYTE!" 
+                          : "❓ JEDNA LITERA JEST UKRYTA!"}
+                    </motion.span>
+                  )}
+                </div>
+              ) : (
+                <div className="text-[11px] font-black text-white tracking-[0.2em] uppercase flex flex-col items-center gap-1.5 px-4 text-center">
+                  <span className="text-[#bf94ff] drop-shadow-md leading-tight">WPISUJ HASŁA NA CZACIE TWITCH</span>
+                </div>
+              )}
             </div>
             
             <AnimatePresence>
@@ -2640,36 +2756,30 @@ export default function App() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9 }}
-                  className={`absolute inset-0 flex items-center justify-center gap-3 z-10 backdrop-blur-sm
-                    ${feedback.type === 'success' ? 'bg-green-500/10 text-green-500' : 
-                      feedback.type === 'freeze' ? 'bg-blue-500/10 text-blue-400' : 
-                      feedback.type === 'hazard' ? 'bg-red-500/10 text-accent-red' : 'bg-accent-red/10 text-accent-red'}
+                  className={`absolute inset-0 flex items-center justify-center gap-2 z-10 backdrop-blur-md px-4 text-center
+                    ${feedback.type === 'success' ? 'bg-green-500/20 text-green-400' : 
+                      feedback.type === 'freeze' ? 'bg-blue-500/20 text-blue-300' : 
+                      feedback.type === 'hazard' ? 'bg-red-500/20 text-accent-red' : 'bg-accent-red/20 text-accent-red'}
                   `}
                 >
-                  {feedback.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : 
-                   feedback.type === 'freeze' ? <Timer className="w-5 h-5 animate-spin-slow" /> : 
-                   feedback.type === 'hazard' ? <Skull className="w-5 h-5 animate-bounce" /> : <AlertCircle className="w-5 h-5" />}
-                  <span className="font-black text-sm tracking-widest uppercase">{feedback.message}</span>
+                  {feedback.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : 
+                   feedback.type === 'freeze' ? <Timer className="w-4 h-4 animate-spin-slow shrink-0" /> : 
+                   feedback.type === 'hazard' ? <Skull className="w-4 h-4 animate-bounce shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                  <span className="font-black text-[11px] tracking-wider uppercase leading-tight">{feedback.message}</span>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
-        </div>
 
-        {/* Side Chat Panel */}
-        <aside className="w-96 hidden lg:flex flex-col bg-bg-card border border-border-color rounded-2xl overflow-hidden shadow-2xl">
-          {/* Consolidated Channel & Chat Header */}
-          <div className="p-4 border-b border-border-color bg-neutral-900/50 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FaTwitch className={`w-4 h-4 ${isConnected ? 'text-purple-500 fill-purple-500' : 'text-neutral-700'}`} />
-                <span className="text-[10px] font-black tracking-widest text-text-secondary uppercase">TWITCH CHAT</span>
-              </div>
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-neutral-700'}`} />
+          {/* Consolidated Chat Header */}
+          <div className="p-4 border-b border-white/10 bg-[#18181b] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FaTwitch className={`w-4 h-4 ${isConnected ? 'text-[#9146ff]' : 'text-neutral-700'}`} />
+              <span className="text-[10px] font-black tracking-widest text-white/50 uppercase">TWITCH CHAT</span>
             </div>
-            <div className="flex items-center justify-between bg-bg-main/50 px-3 py-1.5 rounded-lg border border-border-color">
-              <span className="text-[9px] font-bold text-text-secondary uppercase opacity-70">KANAŁ:</span>
-              <span className="text-[11px] font-black text-purple-500 uppercase tracking-tighter">{activeChannel}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-black text-[#9146ff] uppercase">{activeChannel}</span>
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-neutral-700'}`} />
             </div>
           </div>
 
@@ -2733,6 +2843,121 @@ export default function App() {
       `}} />
 
       {renderGlobalOverlays()}
+
+      {/* Developer Debug Panel */}
+      {isDevAuthorized && (
+        <div className="fixed bottom-4 left-4 z-[9999] flex flex-col items-start gap-2">
+          <button 
+            onClick={() => setShowDevPanel(!showDevPanel)}
+            className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded-full shadow-lg border border-white/10 transition-all active:scale-95"
+            title="Developer Tools"
+          >
+            <Settings className={`w-5 h-5 ${showDevPanel ? 'rotate-90' : ''}`} />
+          </button>
+
+          <AnimatePresence>
+            {showDevPanel && (
+              <motion.div 
+                initial={{ opacity: 0, y: 20, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 20, scale: 0.9 }}
+                className="bg-neutral-900 border border-white/20 p-4 rounded-2xl shadow-2xl w-64 space-y-3 backdrop-blur-xl"
+              >
+                <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
+                  <span className="text-[10px] font-black tracking-widest text-white/50 uppercase">DEV TOOLS</span>
+                  <span className="text-[9px] font-mono text-white/30 uppercase">v{appVersion}</span>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[8px] font-bold text-white/40 uppercase">Master Word</span>
+                    <div className="bg-black/50 px-2 py-1 rounded text-xs font-mono text-yellow-500 flex justify-between items-center group">
+                      <span>{currentLevel.masterWord}</span>
+                      <span className="text-[8px] text-white/20 group-hover:text-white/40">LEVEL {levelIndex + 1}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[8px] font-bold text-white/40 uppercase">Jump to Level</span>
+                    <div className="flex gap-2">
+                      <input 
+                        type="number" 
+                        min="1"
+                        placeholder="Lvl"
+                        className="w-full bg-black/50 px-2 py-1 rounded text-xs font-mono text-white border border-white/10"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const val = parseInt((e.target as HTMLInputElement).value);
+                            if (!isNaN(val)) {
+                              const targetIdx = val - 1;
+                              setLevelIndex(targetIdx);
+                              setFoundWords([]);
+                              setTimeLeft(INITIAL_TIME);
+                              setShuffledLetters([]);
+                              lettersPoolRef.current = [];
+                              setHints({});
+                              setGameState('countdown');
+                              setCountdownValue(3);
+                              processedWordsInRoundRef.current.clear();
+                              foundLettersRef.current = 0;
+                              totalLettersRef.current = 0;
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button 
+                      onClick={() => {
+                        setTimeLeft(prev => prev + 30);
+                      }}
+                      className="flex items-center justify-center gap-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 py-2 rounded-xl text-[10px] font-bold uppercase transition-colors"
+                    >
+                      <Plus className="w-3 h-3" /> 30s
+                    </button>
+                    <button 
+                      onClick={() => {
+                        processRoundResults(true);
+                        setTimeout(nextLevel, 100);
+                      }}
+                      className="flex items-center justify-center gap-1.5 bg-green-600/20 hover:bg-green-600/30 text-green-400 py-2 rounded-xl text-[10px] font-bold uppercase transition-colors"
+                    >
+                      <FastForward className="w-3 h-3" /> Skip
+                    </button>
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      const unplayed = possibleAnswers.filter(w => !foundWords.some(fw => fw.word === w));
+                      if (unplayed.length > 0) {
+                        const nextWord = unplayed[0];
+                        // Simulate correct guess
+                        setFoundWords(prev => [...prev, { word: nextWord, user: 'DevTester', points: nextWord.length * 10 }]);
+                      }
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 py-2 rounded-xl text-[10px] font-bold uppercase transition-colors"
+                  >
+                    <Sparkles className="w-3 h-3" /> Force Guess
+                  </button>
+
+                  <button 
+                    onClick={() => {
+                      clearStats();
+                      exitToLobby();
+                      window.location.reload();
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 bg-red-600/20 hover:bg-red-600/30 text-accent-red py-2 rounded-xl text-[10px] font-bold uppercase transition-colors"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Hard Reset
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }
