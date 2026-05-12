@@ -30,5 +30,7 @@ export const AUDIO_PATHS = {
   SHIELD_BREAK: '/sounds/shield_effect.mp3',
   HAZARD_BLOCK: '/sounds/shield_effect.mp3',
   BACKGROUND_MUSIC: '/sounds/CircuitHeartbeat.mp3',
+  HAZARD_FROST_BITE: '/sounds/bonus_freeze.mp3',
+  BONUS_PARASITE: '/sounds/parasite.mp3',
   TIME_WARNING: '/sounds/time_warning.mp3',
 };

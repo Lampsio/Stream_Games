@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle, Plus, FastForward } from 'lucide-react';
+import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle, Plus, FastForward, Snowflake, Bug } from 'lucide-react';
 import tmi from 'tmi.js';
 import confetti from 'canvas-confetti';
 import { check } from '@tauri-apps/plugin-updater';
@@ -10,6 +10,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import logoImg from './assets/logo-ap.png';
 
 import LEVELS_DATA from './levels.json';
+import CHANGELOG_DATA from './changelog.json';
 import { loadStats, saveStats, clearStats } from './lib/persistence';
 import { AUDIO_PATHS } from './constants';
 import { FaTwitch } from "react-icons/fa";
@@ -31,7 +32,7 @@ interface Letter {
   isHidden?: boolean;
 }
 
-type SpecialWordType = 'FREEZE' | 'GOLD' | 'TIME' | 'SCANNER' | 'STORM' | 'DARKNESS' | 'TRAP' | 'MYSTERY' | 'LEADER_BLOCK' | 'SHIELD' | 'SELF_STUN' | null;
+type SpecialWordType = 'FREEZE' | 'GOLD' | 'TIME' | 'SCANNER' | 'STORM' | 'DARKNESS' | 'TRAP' | 'MYSTERY' | 'LEADER_BLOCK' | 'SHIELD' | 'SELF_STUN' | 'FROST_BITE' | 'PARASITE' | null;
 
 interface FoundWord {
   word: string;
@@ -81,6 +82,7 @@ export default function App() {
   const [globalStats, setGlobalStats] = useState<Record<string, UserStats>>({});
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
   const [shuffledLetters, setShuffledLetters] = useState<Letter[]>([]);
   const lettersPoolRef = useRef<Letter[]>([]);
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' | 'freeze' | 'hazard' | null }>({ message: "", type: null });
@@ -95,6 +97,18 @@ export default function App() {
   });
   const [statsTab, setStatsTab] = useState<'world' | 'points' | 'rounds' | 'games' | 'masters' | 'streaks' | 'shields'>('world');
   const [blockedPlayer, setBlockedPlayer] = useState<{ username: string; expiresAt: number } | null>(null);
+  const [frozenWords, setFrozenWords] = useState<Record<string, number>>({});
+  const [activeParasites, setActiveParasites] = useState<Record<string, { victim: string; expiresAt: number }>>({});
+  const frozenWordsRef = useRef<Record<string, number>>({});
+  const activeParasitesRef = useRef<Record<string, { victim: string; expiresAt: number }>>({});
+
+  useEffect(() => {
+    frozenWordsRef.current = frozenWords;
+  }, [frozenWords]);
+
+  useEffect(() => {
+    activeParasitesRef.current = activeParasites;
+  }, [activeParasites]);
   
   // Layout Scaling Settings
   const [wordScale, setWordScale] = useState(() => {
@@ -125,7 +139,7 @@ export default function App() {
   const [showDevPanel, setShowDevPanel] = useState(false);
   const [isDevAuthorized, setIsDevAuthorized] = useState(false);
   const [devPasswordInput, setDevPasswordInput] = useState("");
-  const [appVersion, setAppVersion] = useState('0.1.1');
+  const [appVersion, setAppVersion] = useState('0.1.9');
   const [timeLeft, setTimeLeft] = useState(INITIAL_TIME);
   const [hints, setHints] = useState<Record<string, number[]>>({}); // word: revealedIndices[]
   const [lastActionTime, setLastActionTime] = useState(Date.now());
@@ -591,14 +605,14 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [gameState, countdownValue]);
 
-  const shuffleLetters = useCallback(() => {
-    // If pool is empty or level changed, initialize it
+  const shuffleLetters = useCallback((forceRerollSpecial: boolean = false) => {
+    // If pool is empty or level changed or forced, initialize it
     // Check if we need to regenerate the pool
     const currentPool = lettersPoolRef.current;
     const isNewLevel = currentPool.length === 0 || 
                        currentPool.filter(l => !l.isDecoy).map(l => l.char).join('') !== currentLevel.masterWord;
 
-    if (isNewLevel) {
+    if (isNewLevel || forceRerollSpecial) {
       const letters: Letter[] = currentLevel.masterWord.split('').map((char) => ({ 
         id: Math.random(), 
         char, 
@@ -637,15 +651,31 @@ export default function App() {
       // Level 1-3: 2 positive special words
       // Level 4-14: 2 positive
       // Level 15+: 2 positive, 1 hazard, 1 mystery
-      const positiveTypes: SpecialWordType[] = ['FREEZE', 'GOLD', 'TIME', 'SCANNER', 'SHIELD'];
-      const hazardTypes: SpecialWordType[] = ['STORM', 'DARKNESS', 'TRAP'];
-      if (levelIndex + 1 >= 25) hazardTypes.push('SELF_STUN');
+      const positiveTypes: SpecialWordType[] = ['FREEZE', 'TIME', 'SCANNER', 'GOLD', 'FREEZE', 'TIME', 'SCANNER', 'GOLD', 'FREEZE', 'TIME', 'SCANNER', 'GOLD'];
+      if (levelIndex + 1 >= 1) positiveTypes.push('SHIELD');
+      
+      const hazardTypes: SpecialWordType[] = ['DARKNESS', 'TRAP', 'DARKNESS', 'TRAP'];
+      if (levelIndex + 1 >= 25) {
+        hazardTypes.push('SELF_STUN');
+        hazardTypes.push('SELF_STUN');
+        hazardTypes.push('LEADER_BLOCK');
+      }
+      if (levelIndex + 1 >= 30) {
+        hazardTypes.push('STORM');
+        hazardTypes.push('STORM');
+      }
+      if (levelIndex + 1 >= 35) {
+        hazardTypes.push('FROST_BITE');
+      }
+      if (levelIndex + 1 >= 30) {
+        positiveTypes.push('PARASITE');
+      }
       
       const posCount = levelIndex + 1 >= 11 ? 3 : 2;
       const hazCount = levelIndex + 1 >= 15 ? 1 : 0;
       const mysteryCount = levelIndex + 1 >= 15 ? 1 : 0;
-      const leaderBlockCount = levelIndex + 1 >= 15 ? 1 : 0;
-      const shieldCount = levelIndex + 1 >= 10 ? 1 : 0;
+      const leaderBlockCount = 0;
+      const shieldCount = 0;
       
       // Shuffle all but master word
       const shuffledAnswers = currentLevel.answers
@@ -772,6 +802,8 @@ export default function App() {
     setFoundWords([]);
     lettersPoolRef.current = [];
     setHints({});
+    setFrozenWords({});
+    setActiveParasites({});
     setBlockedPlayer(null);
     setLastActionTime(Date.now());
     setTimeLeft(INITIAL_TIME);
@@ -875,6 +907,13 @@ export default function App() {
       if (gameStateRef.current === 'playing') {
         if (guess.length < 3) return;
 
+        // Check if word is frozen
+        const frostExpiry = frozenWordsRef.current[guess];
+        if (frostExpiry && Date.now() < frostExpiry) {
+          showFeedback(`${rawUser}: SŁOWO "${guess}" JEST ZAMROŻONE! ❄️`, "hazard", 'HAZARD_STUN');
+          return;
+        }
+
         // Synchronous check to prevent double-processing of the same word in the same round
         if (processedWordsInRoundRef.current.has(guess)) {
           addDebugLog("Duplicate word blocked", { guess, user: rawUser });
@@ -892,13 +931,13 @@ export default function App() {
           // Mystery Resolution
           let mysteryResolvedType: SpecialWordType = null;
           if (specialType === 'MYSTERY') {
-            const allTypes: SpecialWordType[] = ['FREEZE', 'GOLD', 'TIME', 'SCANNER', 'STORM', 'DARKNESS', 'TRAP', 'LEADER_BLOCK'];
+            const allTypes: SpecialWordType[] = ['FREEZE', 'GOLD', 'TIME', 'SCANNER', 'STORM', 'DARKNESS', 'TRAP', 'LEADER_BLOCK', 'FROST_BITE', 'PARASITE'];
             mysteryResolvedType = allTypes[Math.floor(Math.random() * allTypes.length)];
             specialType = mysteryResolvedType;
             showFeedback(`${rawUser}: NIESPODZIANKA! 🎁`, "success", 'BONUS_MYSTERY');
           }
 
-          let pointsToAdd = specialType === 'GOLD' ? guess.length + 20 : guess.length;
+          let pointsToAdd = specialType === 'GOLD' ? guess.length + 10 : guess.length;
           
           // Helper to check and consume shield
           const hasShield = (user: string) => {
@@ -944,8 +983,8 @@ export default function App() {
             if (hasShield(rawUser)) {
               showFeedback(`${rawUser}: TARCZA CHRONI PRZED SZTORMEM! 🛡️`, "success", 'BONUS_SHIELD');
             } else {
-              showFeedback(`${rawUser}: SZTORM! (Przetasowanie)`, "hazard", 'HAZARD_STORM');
-              shuffleLetters();
+              shuffleLetters(true);
+              showFeedback(`SZTORM! LITERKI ZOSTAŁY PRZETASOWANE! 🌪️`, "hazard", 'HAZARD_STORM');
             }
           } else if (specialType === 'DARKNESS') {
             if (hasShield(rawUser)) {
@@ -969,7 +1008,7 @@ export default function App() {
               if (hasShield(actualLeader)) {
                 showFeedback(`LIDER ${actualLeader} UŻYŁ TARCZY! 🛡️`, "success", 'BONUS_SHIELD');
               } else {
-                setBlockedPlayer({ username: actualLeader, expiresAt: Date.now() + 20000 });
+                setBlockedPlayer({ username: actualLeader, expiresAt: Date.now() + 15000 });
                 showFeedback(`${rawUser} BLOKUJE LIDERA (${actualLeader})!`, "hazard", 'HAZARD_BLOCK');
               }
             } else if (actualLeader && rawUser === actualLeader) {
@@ -984,8 +1023,38 @@ export default function App() {
             if (hasShield(rawUser)) {
               showFeedback(`${rawUser}: TARCZA CHRONI PRZED PARALIŻEM! 🛡️`, "success", 'BONUS_SHIELD');
             } else {
-              setBlockedPlayer({ username: rawUser, expiresAt: Date.now() + 20000 });
-              showFeedback(`${rawUser}: PARALIŻ! Zablokowany na 20s 🚫`, "hazard", 'HAZARD_STUN');
+              setBlockedPlayer({ username: rawUser, expiresAt: Date.now() + 15000 });
+              showFeedback(`${rawUser}: PARALIŻ! Zablokowany na 15s 🚫`, "hazard", 'HAZARD_STUN');
+            }
+          } else if (specialType === 'FROST_BITE') {
+            if (hasShield(rawUser)) {
+              showFeedback(`${rawUser}: TARCZA CHRONI PRZED MROŹNYM POWIEWEM! 🛡️`, "success", 'BONUS_SHIELD');
+            } else {
+              const undiscovered = possibleAnswersRef.current.filter(w => 
+                w !== currentLevelRef.current.masterWord && 
+                !foundWordsRef.current.find(fw => fw.word === w) &&
+                !(frozenWordsRef.current[w] && Date.now() < frozenWordsRef.current[w])
+              );
+
+              if (undiscovered.length > 0) {
+                const targetWord = undiscovered[Math.floor(Math.random() * undiscovered.length)];
+                setFrozenWords(prev => ({ ...prev, [targetWord]: Date.now() + 10000 }));
+                showFeedback(`${rawUser} aktywował SZRON! Zamrożono: ${targetWord} ❄️`, "hazard", 'HAZARD_FROST_BITE');
+              } else {
+                showFeedback(`${rawUser}: SZRON! (Brak słów do zamrożenia)`, "hazard", 'HAZARD_FROST_BITE');
+              }
+            }
+          } else if (specialType === 'PARASITE') {
+            const otherPlayers = Object.keys(sessionScoresRef.current).filter(u => u.toLowerCase() !== rawUser.toLowerCase());
+            if (otherPlayers.length > 0) {
+              const victim = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
+              setActiveParasites(prev => ({
+                ...prev,
+                [rawUser.toLowerCase()]: { victim, expiresAt: Date.now() + 10000 }
+              }));
+              showFeedback(`${rawUser}: PASOŻYT! Pasożytujesz na ${victim} przez 10s! 👾`, "success", 'BONUS_PARASITE');
+            } else {
+              showFeedback(`${rawUser}: PASOŻYT! (Brak przeciwników online)`, "success", 'BONUS_PARASITE');
             }
           }
           
@@ -1025,16 +1094,29 @@ export default function App() {
           } else if (specialType === 'FREEZE') {
             // Already handled above with specific 'freeze' type
           } else if (specialType === 'GOLD') {
-            showFeedback(`${rawUser}: ZŁOTE SŁOWO! (+20pkt)`, "success", 'BONUS_GOLD');
+            showFeedback(`${rawUser}: ZŁOTE SŁOWO! (+10pkt)`, "success", 'BONUS_GOLD');
           } else {
             showFeedback(`${rawUser} odgadł: ${guess}`, "success", 'WORD_CORRECT');
           }
 
           // 3. Update session scores
-          setSessionScores(prev => ({
-            ...prev,
-            [rawUser]: (prev[rawUser] || 0) + pointsToAdd
-          }));
+          setSessionScores(prev => {
+            const next = { ...prev };
+            next[rawUser] = (next[rawUser] || 0) + pointsToAdd;
+
+            // PARASITE LOGIC: Check if anyone is parasite-linked to this user
+            Object.entries(activeParasitesRef.current).forEach(([activator, data]) => {
+              const pData = data as { victim: string; expiresAt: number };
+              if (pData.victim.toLowerCase() === rawUser.toLowerCase() && Date.now() < pData.expiresAt) {
+                const parasiticPoints = Math.floor(pointsToAdd * 0.5);
+                if (parasiticPoints > 0) {
+                   next[activator] = (next[activator] || 0) + parasiticPoints;
+                }
+              }
+            });
+
+            return next;
+          });
 
           // 4. Update round words
           setFoundWords(prev => [...prev, { word: guess, user: rawUser, points: pointsToAdd }]);
@@ -1173,6 +1255,79 @@ export default function App() {
   // --- GLOBAL OVERLAYS ---
   const renderGlobalOverlays = () => (
     <>
+      {/* Changelog Modal */}
+      <AnimatePresence>
+        {showChangelog && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-4 overflow-y-auto custom-scrollbar"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.9, y: 20, opacity: 0 }}
+              className="bg-bg-card border border-white/10 rounded-[3rem] max-w-2xl w-full flex flex-col shadow-[0_0_100px_rgba(0,0,0,0.8)] relative"
+            >
+              <button 
+                onClick={() => setShowChangelog(false)}
+                className="absolute top-8 right-8 p-4 bg-white/5 hover:bg-accent-red rounded-2xl transition-all z-20 group"
+              >
+                <X className="w-6 h-6 text-white" />
+              </button>
+
+              <div className="p-10 border-b border-white/5 bg-gradient-to-br from-white/10 to-transparent">
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="p-3 bg-yellow-500/20 rounded-2xl border border-yellow-500/20">
+                    <Sparkles className="w-8 h-8 text-yellow-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-4xl font-black italic tracking-tighter text-white leading-none">CO NOWEGO?</h2>
+                    <p className="text-[10px] font-black tracking-widest text-yellow-400 uppercase mt-2">DZIENNIK ZMIAN I AKTUALIZACJE</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-10 space-y-12 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                {CHANGELOG_DATA.map((entry: any, idx: number) => (
+                  <div key={idx} className="relative pl-8 border-l-2 border-white/5 space-y-6">
+                    <div className="absolute -left-[9px] top-0 w-4 h-4 bg-bg-card border-2 border-accent-red rounded-full shadow-[0_0_10px_rgba(230,57,70,0.4)]" />
+                    
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl font-black text-white italic tracking-tighter uppercase">{entry.title}</span>
+                        <span className="px-3 py-1 bg-white/5 rounded-full text-[9px] font-black text-text-secondary border border-white/5 uppercase tracking-widest">v{entry.version}</span>
+                      </div>
+                      <span className="text-[10px] font-black text-text-secondary/40 uppercase tracking-widest block">{entry.date}</span>
+                    </div>
+
+                    <ul className="space-y-3">
+                      {entry.changes.map((change: string, cIdx: number) => (
+                        <li key={cIdx} className="flex gap-4 text-sm text-text-secondary leading-relaxed group">
+                          <span className="text-accent-red font-black mt-0.5 group-hover:scale-125 transition-transform">•</span>
+                          <span className="group-hover:text-white transition-colors uppercase font-medium tracking-tight text-[11px]">{change}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-10 bg-white/5 border-t border-white/5 flex flex-col items-center">
+                 <button 
+                   onClick={() => setShowChangelog(false)}
+                   className="w-full bg-white hover:bg-neutral-200 text-black py-5 rounded-2xl font-black tracking-[0.3em] uppercase transition-all shadow-2xl active:scale-95 text-xs"
+                 >
+                   ZAMKNIJ OKNO
+                 </button>
+                 <p className="mt-6 text-[9px] font-black text-text-secondary opacity-30 uppercase tracking-widest italic">TWITCH SŁÓWKA • STWORZONE Z PASJĄ DLA SPOŁECZNOŚCI</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Settings Modal */}
       <AnimatePresence>
         {showSettings && (
@@ -1401,15 +1556,18 @@ export default function App() {
                       </div>
                       
                       {isDevAuthorized ? (
-                        <div className="space-y-4">
-                          <h3 className="text-xl font-black text-white italic tracking-tighter">DOSTĘP AUTORYZOWANY</h3>
-                          <p className="text-[10px] font-bold text-green-400/60 uppercase tracking-widest">Narzędzia deweloperskie są teraz aktywne w rogu ekranu.</p>
-                          <button 
-                            onClick={() => setIsDevAuthorized(false)}
-                            className="bg-white/5 hover:bg-accent-red text-white px-6 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all"
-                          >
-                            WYLOGUJ Z TRYBU DEV
-                          </button>
+                        <div className="space-y-6 w-full max-w-xl">
+                          <div className="space-y-4">
+                            <h3 className="text-xl font-black text-white italic tracking-tighter uppercase">DOSTĘP AUTORYZOWANY</h3>
+                            <p className="text-[10px] font-bold text-green-400/60 uppercase tracking-widest">Narzędzia deweloperskie są teraz aktywne w rogu ekranu.</p>
+                            <p className="text-[9px] font-medium text-white/20 uppercase max-w-[200px] mx-auto italic">Aby edytować changelog, zmień zawartość pliku src/changelog.json</p>
+                            <button 
+                              onClick={() => setIsDevAuthorized(false)}
+                              className="bg-white/5 hover:bg-accent-red text-white px-6 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all"
+                            >
+                              WYLOGUJ Z TRYBU DEV
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <div className="space-y-4">
@@ -1512,7 +1670,7 @@ export default function App() {
                         </div>
                         <div>
                           <h4 className="text-sm font-black text-yellow-500 uppercase">ZŁOTE SŁOWO</h4>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Daje potężny bonus <span className="text-white font-bold">+20 PUNKTÓW</span> do podstawowej długości słowa.</p>
+                          <p className="text-[11px] text-text-secondary leading-relaxed">Daje bonus <span className="text-white font-bold">+10 PUNKTÓW</span> do podstawowej długości słowa.</p>
                         </div>
                      </div>
                      <div className="flex items-center gap-4 bg-blue-400/5 border border-blue-400/10 p-4 rounded-2xl">
@@ -1542,6 +1700,18 @@ export default function App() {
                           <p className="text-[11px] text-text-secondary leading-relaxed">Automatycznie odkrywa <span className="text-white font-bold">PIERWSZĄ LITERĘ</span> w połowie nieodkrytych słów.</p>
                         </div>
                      </div>
+                     <div className="flex items-center gap-4 bg-purple-400/5 border border-purple-400/10 p-4 rounded-2xl">
+                        <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.3)] shrink-0">
+                          <Bug className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                             <h4 className="text-sm font-black text-purple-400 uppercase">PASOŻYT</h4>
+                             <span className="text-[8px] font-black bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded border border-purple-500/20 uppercase tracking-tighter shrink-0">OD 30. POZIOMU</span>
+                           </div>
+                          <p className="text-[11px] text-text-secondary leading-relaxed">Przez 10 sekund otrzymujesz <span className="text-white font-bold">50% PUNKTÓW</span> za każde słowo odgadnięte przez wybranego losowo przeciwnika!</p>
+                        </div>
+                     </div>
                   </div>
                 </div>
 
@@ -1550,7 +1720,7 @@ export default function App() {
                     <h3 className="text-xs font-black tracking-[0.3em] text-orange-500 uppercase flex items-center gap-2">
                       <Skull className="w-4 h-4" /> ZAGROŻENIA RUNDY
                     </h3>
-                    <span className="text-[9px] font-black bg-orange-500/10 text-orange-500 px-2 py-0.5 rounded border border-orange-500/20 uppercase tracking-tighter">OD 15. POZIOMU</span>
+                    <span className="text-[9px] font-black bg-orange-500/10 text-orange-500 px-2 py-0.5 rounded border border-orange-500/20 uppercase tracking-tighter">OD 30. POZIOMU</span>
                   </div>
                   <div className="grid gap-2">
                      <div className="flex items-center gap-4 bg-orange-400/5 border border-orange-400/10 p-4 rounded-2xl opacity-80">
@@ -1559,7 +1729,7 @@ export default function App() {
                         </div>
                         <div>
                           <h4 className="text-sm font-black text-orange-500 uppercase">SZTORM</h4>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Natychmiast <span className="text-white font-bold">PRZETASOWUJE</span> wszystkie litery na dolnej belce.</p>
+                          <p className="text-[11px] text-text-secondary leading-relaxed">Natychmiast <span className="text-white font-bold">PRZETASOWUJE</span> wszystkie litery na dolnej belce. Potrafi także zmienić fałszywą oraz ukrytą literkę!</p>
                         </div>
                      </div>
                      <div className="flex items-center gap-4 bg-purple-400/5 border border-purple-400/10 p-4 rounded-2xl opacity-80">
@@ -1576,8 +1746,23 @@ export default function App() {
                           <UserMinus className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                          <h4 className="text-sm font-black text-red-500 uppercase">BLOKADA LIDERA</h4>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Jeśli inny gracz je trafi: <span className="text-white font-bold">BLOKUJE LIDERA</span> na 20s. Jeśli Lider je trafi: zyskuje <span className="text-green-400 font-bold">+30 PKT</span>.</p>
+                          <div className="flex items-center gap-2">
+                             <h4 className="text-sm font-black text-red-500 uppercase">BLOKADA LIDERA</h4>
+                             <span className="text-[8px] font-black bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded border border-red-500/20 uppercase tracking-tighter shrink-0">OD 25. POZIOMU</span>
+                           </div>
+                          <p className="text-[11px] text-text-secondary leading-relaxed">Jeśli inny gracz je trafi: <span className="text-white font-bold">BLOKUJE LIDERA</span> na 15s. Jeśli Lider je trafi: zyskuje <span className="text-green-400 font-bold">+30 PKT</span>.</p>
+                        </div>
+                     </div>
+                     <div className="flex items-center gap-4 bg-blue-400/5 border border-blue-400/10 p-4 rounded-2xl opacity-80">
+                        <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(37,99,235,0.3)] shrink-0">
+                          <Snowflake className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                             <h4 className="text-sm font-black text-blue-400 uppercase">SZRON</h4>
+                             <span className="text-[8px] font-black bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase tracking-tighter shrink-0">OD 35. POZIOMU</span>
+                           </div>
+                          <p className="text-[11px] text-text-secondary leading-relaxed"><span className="text-white font-bold">ZAMRAŻA</span> losowe nieodkryte hasło na 10 sekund. W tym czasie nie można go odgadnąć!</p>
                         </div>
                      </div>
                      <div className="flex items-center gap-4 bg-neutral-400/5 border border-neutral-400/10 p-4 rounded-2xl opacity-80">
@@ -1598,7 +1783,7 @@ export default function App() {
                              <h4 className="text-sm font-black text-red-500 uppercase">PARALIŻ</h4>
                              <span className="text-[8px] font-black bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded border border-red-500/20 uppercase tracking-tighter shrink-0">OD 25. POZIOMU</span>
                           </div>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Gracz, który odkryje to słowo, zostaje <span className="text-white font-bold">ZABLOKOWANY NA 20 SEKUND</span>. Tarcza chroni przed tym efektem.</p>
+                          <p className="text-[11px] text-text-secondary leading-relaxed">Gracz, który odkryje to słowo, zostaje <span className="text-white font-bold">ZABLOKOWANY NA 15 SEKUND</span>. Tarcza chroni przed tym efektem.</p>
                         </div>
                      </div>
                   </div>
@@ -1938,6 +2123,14 @@ export default function App() {
               >
                 <Info className="w-3.5 h-3.5 group-hover:text-cyan-400 transition-colors" />
                 INSTRUKCJA GRY
+              </button>
+
+              <button
+                onClick={() => setShowChangelog(true)}
+                className="w-full mt-2 py-3 rounded-xl font-black text-[10px] tracking-[0.3em] uppercase transition-all bg-white/5 text-text-secondary hover:bg-white/10 border border-white/5 flex items-center justify-center gap-2 group"
+              >
+                <Sparkles className="w-3.5 h-3.5 group-hover:text-yellow-400 transition-colors" />
+                CO NOWEGO (PATCH NOTES)
               </button>
             </div>
           </div>
@@ -2418,17 +2611,23 @@ export default function App() {
                   {possibleAnswers.map(word => {
                     const isFound = foundWords.some(fw => fw.word === word);
                     const specialType = specialWords[word];
+                    const isFrozen = frozenWords[word] && Date.now() < frozenWords[word];
                     return (
                       <div 
                         key={word}
                         className={`p-2 rounded-lg border flex flex-col items-center justify-center relative overflow-hidden ${
-                          isFound ? 'bg-green-500/10 border-green-500/30' : 'bg-white/5 border-white/10'
+                          isFound ? 'bg-green-500/10 border-green-500/30' : isFrozen ? 'bg-blue-500/10 border-blue-500/50' : 'bg-white/5 border-white/10'
                         }`}
                       >
-                        <span className={`text-xs font-black font-mono tracking-tighter ${isFound ? 'text-green-500' : 'text-text-secondary'}`}>
+                        <span className={`text-xs font-black font-mono tracking-tighter whitespace-nowrap overflow-hidden ${isFound ? 'text-green-500' : isFrozen ? 'text-blue-300' : 'text-text-secondary'}`}>
                           {word}
                         </span>
-                        {specialType && (
+                        {isFrozen && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-blue-500/5">
+                             <Snowflake className="w-4 h-4 text-blue-400 opacity-40 animate-spin" />
+                          </div>
+                        )}
+                        {specialType && !isFound && !isFrozen && (
                           <div className={`absolute top-0 right-0 w-1.5 h-1.5 rounded-full m-1 ${
                             ['FREEZE', 'GOLD', 'TIME', 'SCANNER', 'MYSTERY'].includes(specialType || '') ? 'bg-cyan-400' : 'bg-red-500'
                           }`} />
@@ -2573,26 +2772,6 @@ export default function App() {
               `}
             />
           </div>
-          {isTimeFrozen && (
-            <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[9px] font-black text-cyan-400 tracking-widest animate-bounce">
-              CZAS ZAMROŻONY 🧊
-            </div>
-          )}
-          {isDarknessActive && (
-            <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[9px] font-black text-purple-400 tracking-widest animate-pulse">
-              MROK AKTYWNY 🌫️
-            </div>
-          )}
-          {blockedPlayer && Date.now() < blockedPlayer.expiresAt && (
-             <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-red-600 px-4 py-1 rounded-full text-[10px] font-black text-white tracking-widest animate-pulse border border-red-400 shadow-lg whitespace-nowrap">
-               LIDER BLOKOWANY: {blockedPlayer.username.toUpperCase()} (20s) 🚫
-             </div>
-          )}
-          {currentLeader && (sessionShields[currentLeader] || 0) > 0 && (
-             <div className={`absolute -top-10 left-1/2 -translate-x-1/2 bg-cyan-600 px-4 py-1 rounded-full text-[10px] font-black text-white tracking-widest border border-cyan-400 shadow-lg whitespace-nowrap transition-all duration-300 ${blockedPlayer ? 'translate-y-8' : ''}`}>
-               LIDER MA TARCZĘ 🛡️ ({sessionShields[currentLeader]})
-             </div>
-          )}
         </div>
       </section>
 
@@ -2601,23 +2780,48 @@ export default function App() {
         
         {/* Answers Grid Section */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex justify-between items-end mb-4 border-b border-white/5 pb-4">
-            <div className="flex flex-col">
+          <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-4">
+            <div className="flex flex-col min-w-[150px]">
               <div className="flex items-center gap-3 mb-1">
                 <span className="text-[10px] font-black tracking-[0.3em] text-text-secondary uppercase opacity-50">STREFA GRY</span>
               </div>
-              <span className="text-4xl font-black italic tracking-tighter text-accent-red uppercase italic">POZIOM {levelIndex + 1}</span>
+              <span className="text-4xl font-black italic tracking-tighter text-accent-red uppercase italic leading-none">POZIOM {levelIndex + 1}</span>
             </div>
-            <div className="flex flex-col items-end">
-               <span className="text-[10px] font-black tracking-[0.2em] text-text-secondary uppercase opacity-50 mb-1">ZDOBYTE LITERY:</span>
+
+            {/* Notifications Middle */}
+            <div className="flex-1 flex flex-col items-center justify-center gap-2 px-4 h-full pt-4">
+               {isTimeFrozen && (
+                <motion.div initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="text-[9px] font-black text-cyan-400 tracking-widest animate-bounce bg-cyan-400/10 px-3 py-1 rounded-full border border-cyan-400/20 whitespace-nowrap">
+                  CZAS ZAMROŻONY 🧊
+                </motion.div>
+              )}
+              {isDarknessActive && (
+                <motion.div initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="text-[9px] font-black text-purple-400 tracking-widest animate-pulse bg-purple-400/10 px-3 py-1 rounded-full border border-purple-400/20 whitespace-nowrap">
+                  MROK AKTYWNY 🌫️
+                </motion.div>
+              )}
+              {blockedPlayer && Date.now() < blockedPlayer.expiresAt && (
+                 <motion.div initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-red-600/20 px-4 py-1.5 rounded-full text-[10px] font-black text-red-500 tracking-widest animate-pulse border border-red-500/30 whitespace-nowrap">
+                   LIDER BLOKOWANY: {blockedPlayer.username.toUpperCase()} 🚫
+                 </motion.div>
+              )}
+              {currentLeader && (sessionShields[currentLeader] || 0) > 0 && (
+                 <motion.div initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-cyan-600/20 px-4 py-1.5 rounded-full text-[10px] font-black text-cyan-400 tracking-widest border border-cyan-400/30 whitespace-nowrap">
+                   LIDER MA TARCZĘ 🛡️ ({sessionShields[currentLeader]})
+                 </motion.div>
+              )}
+            </div>
+
+            <div className="flex flex-col items-end min-w-[150px]">
+               <span className="text-[10px] font-black tracking-[0.2em] text-text-secondary uppercase opacity-50 mb-1 leading-none">ZDOBYTE LITERY:</span>
                <div className="flex items-baseline gap-2">
-                 <span className={`text-4xl font-black font-mono transition-colors duration-500 ${completionRate >= 70 ? 'text-green-500' : 'text-accent-red'}`}>
+                 <span className={`text-4xl font-black font-mono transition-colors duration-500 leading-none ${completionRate >= 70 ? 'text-green-500' : 'text-accent-red'}`}>
                     {foundLettersInLevel}
                  </span>
-                 <span className="text-text-secondary font-black text-xl opacity-30">/</span>
+                 <span className="text-text-secondary font-black text-xl opacity-30 leading-none">/</span>
                  <div className="flex flex-col">
                    <span className="text-text-secondary font-black text-xl opacity-50 leading-none">{targetLetters}</span>
-                   <span className="text-[7px] font-black tracking-widest text-text-secondary uppercase opacity-30 mt-0.5">CEL 70%</span>
+                   <span className="text-[7px] font-black tracking-widest text-text-secondary uppercase opacity-30 mt-0.5 leading-none">CEL 70%</span>
                  </div>
                </div>
             </div>
@@ -2635,18 +2839,21 @@ export default function App() {
                 const foundData = foundWords.find(fw => fw.word === word);
                 const revealedIndices = hints[word] || [];
                 const specialType = specialWords[word];
+                const isFrozen = frozenWords[word] && Date.now() < frozenWords[word];
                 
                 return (
                   <motion.div
                     key={word}
                     initial={false}
                     animate={{ 
-                      scale: foundData ? 1 : 0.98,
+                      scale: foundData ? 1 : isFrozen ? 0.95 : 0.98,
                       y: foundData ? 0 : 2
                     }}
                     className={`relative flex flex-col items-center justify-center rounded-xl border-2 transition-all duration-300 px-3
                       ${foundData 
                         ? 'bg-accent-red border-accent-red text-white shadow-[0_0_20px_rgba(230,57,70,0.3)]' 
+                        : isFrozen ? 'bg-blue-500/20 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]'
+                        : specialType === 'PARASITE' ? 'bg-purple-500/20 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.5)]'
                         : specialType === 'FREEZE' ? 'bg-blue-900/20 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.3)]'
                         : specialType === 'GOLD' ? 'bg-yellow-900/20 border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.3)]'
                         : specialType === 'TIME' ? 'bg-green-900/20 border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.3)]'
@@ -2664,7 +2871,7 @@ export default function App() {
                     `}
                     style={{ height: `${wordHeight}px` }}
                   >
-                    {specialType && !foundData && (
+                    {specialType && !foundData && !isFrozen && (
                       <div className="absolute top-1 right-1 z-20">
                         {specialType === 'FREEZE' && <div className="w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Timer className="w-4 h-4 text-white" /></div>}
                         {specialType === 'GOLD' && <div className="w-7 h-7 bg-yellow-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Trophy className="w-4 h-4 text-white" /></div>}
@@ -2676,12 +2883,28 @@ export default function App() {
                         {specialType === 'SHIELD' && <div className="w-7 h-7 bg-indigo-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><ShieldCheck className="w-4 h-4 text-white" /></div>}
                         {specialType === 'LEADER_BLOCK' && <div className="w-7 h-7 bg-red-600 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><UserMinus className="w-4 h-4 text-white" /></div>}
                         {specialType === 'SELF_STUN' && <div className="w-7 h-7 bg-pink-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><AlertCircle className="w-4 h-4 text-white" /></div>}
+                        {specialType === 'FROST_BITE' && <div className="w-7 h-7 bg-blue-600 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Snowflake className="w-4 h-4 text-white" /></div>}
+                        {specialType === 'PARASITE' && <div className="w-7 h-7 bg-purple-600 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Bug className="w-4 h-4 text-white" /></div>}
                         {specialType === 'MYSTERY' && <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main animate-bounce"><HelpCircle className="w-5 h-5 text-bg-main" /></div>}
                       </div>
                     )}
+                    {isFrozen && (
+                      <div className="absolute inset-0 z-30 flex items-center justify-center bg-blue-500/20 backdrop-blur-[1px]">
+                         <motion.div
+                           animate={{ rotate: 360 }}
+                           transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                         >
+                            <Snowflake className="w-10 h-10 text-blue-300 opacity-80" />
+                         </motion.div>
+                      </div>
+                    )}
                     <div 
-                      className={`font-black tracking-[0.1em] font-mono leading-none break-all text-center ${foundData ? 'text-white' : 'text-accent-red font-bold'}`}
-                      style={{ fontSize: `${word.length > 8 ? 1.5 * wordScale : 2.25 * wordScale}rem` }}
+                      className={`font-black tracking-[0.1em] font-mono leading-none whitespace-nowrap text-center px-1 ${foundData ? 'text-white' : isFrozen ? 'text-blue-300 opacity-50' : 'text-accent-red font-bold'}`}
+                      style={{ 
+                        fontSize: `calc(${word.length > 10 ? Math.max(0.7, 1.8 - (word.length - 10) * 0.1) : (word.length > 7 ? 1.6 : 2.25)}rem * ${wordScale})`,
+                        maxWidth: '100%',
+                        overflow: 'hidden'
+                      }}
                     >
                       {foundData ? word : word.split('').map((char, i) => revealedIndices.includes(i) ? char : '_').join('')}
                       {revealedIndices.length > 0 && !foundData && <Sparkles className="inline-block w-6 h-6 ml-1 text-yellow-500 animate-pulse" />}
@@ -2765,7 +2988,7 @@ export default function App() {
                   {feedback.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : 
                    feedback.type === 'freeze' ? <Timer className="w-4 h-4 animate-spin-slow shrink-0" /> : 
                    feedback.type === 'hazard' ? <Skull className="w-4 h-4 animate-bounce shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-                  <span className="font-black text-[11px] tracking-wider uppercase leading-tight">{feedback.message}</span>
+                  <span className="font-black text-[11px] tracking-wider uppercase leading-tight whitespace-nowrap overflow-hidden text-ellipsis">{feedback.message}</span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -2871,9 +3094,9 @@ export default function App() {
                 <div className="space-y-2">
                   <div className="flex flex-col gap-1">
                     <span className="text-[8px] font-bold text-white/40 uppercase">Master Word</span>
-                    <div className="bg-black/50 px-2 py-1 rounded text-xs font-mono text-yellow-500 flex justify-between items-center group">
-                      <span>{currentLevel.masterWord}</span>
-                      <span className="text-[8px] text-white/20 group-hover:text-white/40">LEVEL {levelIndex + 1}</span>
+                    <div className="bg-black/50 px-2 py-1 rounded text-xs font-mono text-yellow-500 flex justify-between items-center group overflow-hidden">
+                      <span className="whitespace-nowrap overflow-hidden text-ellipsis">{currentLevel.masterWord}</span>
+                      <span className="text-[8px] text-white/20 group-hover:text-white/40 shrink-0 ml-2">LEVEL {levelIndex + 1}</span>
                     </div>
                   </div>
 

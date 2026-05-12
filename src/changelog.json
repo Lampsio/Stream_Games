@@ -1,0 +1,24 @@
+[
+  {
+    "version": "0.2.2",
+    "date": "2026-05-10",
+    "title": "Aktualizacja Mechaniki i Interfejsu",
+    "changes": [
+      "Dodano Patch Notes, który informuje o nowościach w danej wersji", 
+      "Zagrożenie Sztorm (STORM): Przesunięto jego pojawianie się na 30. poziom i powyżej. Ponadto poprawiono logikę jego działania – teraz faktycznie przetasowuje on pulę liter specjalnych w trakcie rundy.",
+"Blokada Lidera (LEADER_BLOCK): Czas trwania blokady został zmniejszony z 20 na 15 sekund",
+"Paraliż (SELF_STUN): Czas trwania blokady gracza, który trafi w to słowo, został zmniejszony z 20 na 15 sekund.",
+"W opisie Sztormu dodano informację, że potrafi on zmienić również litery fałszywe oraz ukryte.",
+"Tarcza (Shield): Zmniejszona częstotliwość: Bonus tarczy jest teraz znacznie rzadszy",
+"Blokada Lidera: Przesunięto pojawianie się tego zagrożenia na poziom 25 i powyżej.",
+"Złote Słówko: Zmniejszona częstotliwość: Bonus złote słówko jest teraz znacznie rzadszy",
+"Nowy Negatywny bonus: „Szron”: Od poziomu 35 ten negatywny bonus może losowo zamrozić nieodkryte słowo (z wyłączeniem słowa głównego) na 10 sekund. W tym czasie słowa nie można odgadnąć.",
+"„Szron”: Zablokowane słowa są teraz wyraźnie oznaczone w siatce niebieską ramką i animowaną ikoną płatka śniegu, aby sygnalizować, że są tymczasowo zablokowane.",
+"Złote Słówko: Zredukowano przyznanie dodatkowych punktów z 20 do 10",
+"Nowy Negatywny bonus: Pasożyt (Parasite): Przez następne 30 sekund otrzymujesz 50% punktów za każde słowo odgadnięte przez losowego gracza (on nie traci, Ty zyskujesz).",
+"Powiadomienia pojawiające się nad paskiem czasu zostały przeniesione niżej",
+"Poprawa jakości wyświetlania słówek",
+"Poszerzono Bazę słów"
+   ]
+  }
+]
