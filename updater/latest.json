@@ -1,43 +1,43 @@
 {
   "version": "0.2.4",
   "notes": "See the assets below to download the latest version.",
-  "pub_date": "2026-11-05T13:17:59.076Z",
+  "pub_date": "2026-11-05T14:49:38.244Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTV6U1lMK1lPWUNXMmhHVnQ4OHhSTnNBalpRUU96aTU4MGNVcWFEbVJRSFhWOVd4N1dKZUZlTGt4Y0ZYb1Z4c2EvdVdRdnBLZ1luOFYydzlLa0JGaEFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODg0NTMzCWZpbGU6c2xvd2thLmFwcC50YXIuZ3oKUllabzZQRWFNbDd5by9iVCtaT28vODN0KzVzbHFPOU9mMUhrSTdMdjJZWDRaLzQ3MitjaVV4cG4zckE4bXV0Y054RndPRzZZTDhVUnE0c2F3c1ZPRFE9PQo=",
-      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.3/slowka_aarch64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTY5YWlBdVFCMXJWaGRDWjA2NnU2MHVwWlo5bWlBMDRNWEJtT0hmKzA0VEJtMjVWS3VLeDkxU1BkZEhPbkJSSVVPU0lMRUpnS2tIWThueUpSdjlBZVFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODkwMDAyCWZpbGU6c2xvd2thLmFwcC50YXIuZ3oKcC8xQ1A0VitvZVBLNUd1UnRnWTFORmFQNUx3b0p2dEhvWHJ4ajdwUVpaMU9leUFkd2xpKzNVbHF1MHprSDBad3ZOMmZ5N1c2WjR0Q0VYdXhESytUQkE9PQo=",
+      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.4/slowka_aarch64.app.tar.gz"
     },
     "darwin-aarch64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTV6U1lMK1lPWUNXMmhHVnQ4OHhSTnNBalpRUU96aTU4MGNVcWFEbVJRSFhWOVd4N1dKZUZlTGt4Y0ZYb1Z4c2EvdVdRdnBLZ1luOFYydzlLa0JGaEFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODg0NTMzCWZpbGU6c2xvd2thLmFwcC50YXIuZ3oKUllabzZQRWFNbDd5by9iVCtaT28vODN0KzVzbHFPOU9mMUhrSTdMdjJZWDRaLzQ3MitjaVV4cG4zckE4bXV0Y054RndPRzZZTDhVUnE0c2F3c1ZPRFE9PQo=",
-      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.3/slowka_aarch64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTY5YWlBdVFCMXJWaGRDWjA2NnU2MHVwWlo5bWlBMDRNWEJtT0hmKzA0VEJtMjVWS3VLeDkxU1BkZEhPbkJSSVVPU0lMRUpnS2tIWThueUpSdjlBZVFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODkwMDAyCWZpbGU6c2xvd2thLmFwcC50YXIuZ3oKcC8xQ1A0VitvZVBLNUd1UnRnWTFORmFQNUx3b0p2dEhvWHJ4ajdwUVpaMU9leUFkd2xpKzNVbHF1MHprSDBad3ZOMmZ5N1c2WjR0Q0VYdXhESytUQkE9PQo=",
+      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.4/slowka_aarch64.app.tar.gz"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTFXZGhQaDZvdHlBNTZ6R1hVa01aYWRkVk9pWG5Ia2hZRjUvelFCZkRZRG1YTTVYUkh4SHhXU0ZlSWxJeW5tdnR0T0FDcks1NVNvU05Xd3prNDlmMHcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODg0NTY1CWZpbGU6c2xvd2thXzAuMi4zX3g2NF9lbi1VUy5tc2kKL2FLRUg0bzRpNFFVdHpQUGMzdTZzcXdqSWpZc3ZBSFpCai9KSDdsT09TMzA2aXl0aVpwZzd5aFkwWFJpYkhLOFlzR1VTTmNNTS9UOW1vNzBHMVU3QUE9PQo=",
-      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.3/slowka_0.2.3_x64_en-US.msi"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTStTak9JSlNuWmxzOEsxdHozTE9maklBM1hEdHhIREZqTVYxaU0wdXluU3pBVE4zaS95cklSZlVsMG92bDZnUXdtVENaaUh0OFJHb3hrU3JDVllkOXdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODkwMTQyCWZpbGU6c2xvd2thXzAuMi40X3g2NF9lbi1VUy5tc2kKSmIrL3Rjb0JlaTk2cFF2QmUrQXc0MVYzRXoxVExJZGdoUWswZzFlWEF4b1BKWERBQVFFN3psRTNwbWU2ZXJjeFRjQnN5aWJ4Tm1IL1pUNDhpZTA5QWc9PQo=",
+      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.4/slowka_0.2.4_x64_en-US.msi"
     },
     "windows-x86_64-msi": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTFXZGhQaDZvdHlBNTZ6R1hVa01aYWRkVk9pWG5Ia2hZRjUvelFCZkRZRG1YTTVYUkh4SHhXU0ZlSWxJeW5tdnR0T0FDcks1NVNvU05Xd3prNDlmMHcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODg0NTY1CWZpbGU6c2xvd2thXzAuMi4zX3g2NF9lbi1VUy5tc2kKL2FLRUg0bzRpNFFVdHpQUGMzdTZzcXdqSWpZc3ZBSFpCai9KSDdsT09TMzA2aXl0aVpwZzd5aFkwWFJpYkhLOFlzR1VTTmNNTS9UOW1vNzBHMVU3QUE9PQo=",
-      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.3/slowka_0.2.3_x64_en-US.msi"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTStTak9JSlNuWmxzOEsxdHozTE9maklBM1hEdHhIREZqTVYxaU0wdXluU3pBVE4zaS95cklSZlVsMG92bDZnUXdtVENaaUh0OFJHb3hrU3JDVllkOXdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODkwMTQyCWZpbGU6c2xvd2thXzAuMi40X3g2NF9lbi1VUy5tc2kKSmIrL3Rjb0JlaTk2cFF2QmUrQXc0MVYzRXoxVExJZGdoUWswZzFlWEF4b1BKWERBQVFFN3psRTNwbWU2ZXJjeFRjQnN5aWJ4Tm1IL1pUNDhpZTA5QWc9PQo=",
+      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.4/slowka_0.2.4_x64_en-US.msi"
     },
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTJOTWFZOU1UY0d6ZXlRRG45RktEZEVIdU5mck90UGtvSnpIV1JnLy9Jek92SzQySXhKVkFrMlVIREdocTl0SGs4ZEhTOStGZXhxTjN5dFAwcE0yTmc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODg0NTY1CWZpbGU6c2xvd2thXzAuMi4zX3g2NC1zZXR1cC5leGUKQjFsOFM5VnhqY1Z2a3R3OG1OZHFhQjFscDVUbUhQZ3haMDI2KzIxWUFDUTNGZkppZHpxVWRGdk4yU2UveXhEaWZ4OFVwUEk1am1rTHNqb2tjUW9SQXc9PQo=",
-      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.3/slowka_0.2.3_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTRWdGVWcGpwQkJQbXhreDVXUGZ0aE5jZkY4UG5vd3plM3lzbWpmYy9uemFjUll4UlkzRFAxYkk5eG9TUU1JMkRjMzBKZHpmUVRkb3dnSHNTWW4zREE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODkwMTQyCWZpbGU6c2xvd2thXzAuMi40X3g2NC1zZXR1cC5leGUKYkwwd2RXdS9NL3paeW1zQWNNcVlCMmFsSTBSaXQrRWV4djhnWGxoZDRsT2lQazdCQW9UWGVZZUl0anU5cGIxZlZXN2VtMVkwdVZkV2g2MktSSmNVQXc9PQo=",
+      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.4/slowka_0.2.4_x64-setup.exe"
     },
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTXkvdS9Mc3VrOGJJUnVkMXhEY0ZwSFdhSzZ3MjhWMmwwWFB1K0ZRSVVtKzlYSFp1Q01vVmFPQkx3WlkyMnFPWGltZ2tqSUJtb3FzT3JRaGZOSzNrVmdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODg0NjY4CWZpbGU6c2xvd2thXzAuMi4zX2FtZDY0LkFwcEltYWdlCm1JaFVyU1lIZ3d0QTJiMGZGUUtzRGc1dnZyVWVtTzRObHlDRHJENWZlOTZzQ0l6cndsMkkyT1dJSmZYK0ZuaTN0SWR0VDA2S1ZFNGRBdHYyK1pwN0J3PT0K",
-      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.3/slowka_0.2.3_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTBLS3l0T0VxVjJ3SHo2OWZOdmM5WlhCeVNtNUtlN3NNdzI0RHVSWDJhbnJWZnVFUTdjQ2MxWjJaWkQzZnZuMzJBdEhHTXRWcTZHV0piQ2RmVGVqUkFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODkwMTY2CWZpbGU6c2xvd2thXzAuMi40X2FtZDY0LkFwcEltYWdlCkJmZEZvMDdCT25ZSXNLZUxtR0ZUbGtXY2VJVENQOFhoMktkcVVUQk95Z3AvelVBY1lwQTNoaHF3RG8yRS9JbjJqbTFGeGdtTnlpOEpxM09WMDNhTER3PT0K",
+      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.4/slowka_0.2.4_amd64.AppImage"
     },
     "linux-x86_64-appimage": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTXkvdS9Mc3VrOGJJUnVkMXhEY0ZwSFdhSzZ3MjhWMmwwWFB1K0ZRSVVtKzlYSFp1Q01vVmFPQkx3WlkyMnFPWGltZ2tqSUJtb3FzT3JRaGZOSzNrVmdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODg0NjY4CWZpbGU6c2xvd2thXzAuMi4zX2FtZDY0LkFwcEltYWdlCm1JaFVyU1lIZ3d0QTJiMGZGUUtzRGc1dnZyVWVtTzRObHlDRHJENWZlOTZzQ0l6cndsMkkyT1dJSmZYK0ZuaTN0SWR0VDA2S1ZFNGRBdHYyK1pwN0J3PT0K",
-      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.3/slowka_0.2.3_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTTBLS3l0T0VxVjJ3SHo2OWZOdmM5WlhCeVNtNUtlN3NNdzI0RHVSWDJhbnJWZnVFUTdjQ2MxWjJaWkQzZnZuMzJBdEhHTXRWcTZHV0piQ2RmVGVqUkFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODkwMTY2CWZpbGU6c2xvd2thXzAuMi40X2FtZDY0LkFwcEltYWdlCkJmZEZvMDdCT25ZSXNLZUxtR0ZUbGtXY2VJVENQOFhoMktkcVVUQk95Z3AvelVBY1lwQTNoaHF3RG8yRS9JbjJqbTFGeGdtTnlpOEpxM09WMDNhTER3PT0K",
+      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.4/slowka_0.2.4_amd64.AppImage"
     },
     "linux-x86_64-deb": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTXpKT2cwc2x0bVFLWDd1NndrWEtDcEhYKzJBZGRtOXQ1Z2NjSlhDUkFvVWUyem5hRWt2UEVyRVliN3FJa0hlYUlDdHVua2JyN1JYZ0tncmxmb1NXSUF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODg0NjY4CWZpbGU6c2xvd2thXzAuMi4zX2FtZDY0LmRlYgowYlNlNHUxRnpKdmwvNzhaVFRhaEZ4eTIxRmNvQm9VSDJUMGZnQ1pwcmJ2Q2VSNTYySFFPcmVoSW1iR2FSeFMzVDkxRU0zNkdnZEVzdW1sUHdYK0VBQT09Cg==",
-      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.3/slowka_0.2.3_amd64.deb"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTXlpN0dCcDhjNVNERmdyZkJYQ3B2SmNhSmdSb2k3T3RMWVljYWx2QWZrUFgrZG5kczZxNExNd3VzNHZHTEJBUkxNcHFYemVzbzRiVEJvTXo1MnN2dGdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODkwMTY2CWZpbGU6c2xvd2thXzAuMi40X2FtZDY0LmRlYgorYWR5RjFodk1pTWd0bGxCTFBIY2dDVWQySmo0eEl2cHNiSEVYZmVGTmFTaEZ1ci9aclF0L0FyODlhcGJKNlhCMXY5OXFUejRtbVEvekNwQnZ2MExDUT09Cg==",
+      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.4/slowka_0.2.4_amd64.deb"
     },
     "linux-x86_64-rpm": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTStqcUs5c3FkNWF0REUySmtjL1pTWlFldXQvL1oxV2IwTjZlSmlSUDJyWVNnL3RFc2Q1YnJtUHdSYmRJOTNRSEdOKzNyaGNDdEVETWVFMlZRRTdNbUFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODg0NjY4CWZpbGU6c2xvd2thLTAuMi4zLTEueDg2XzY0LnJwbQp3OVBGVjVYU2J5azlwaTRsVHAvdEZMYURlcDhXRVZoemtqek1nbnVCREIwYmZDeEdTV3hKZkhGY1JjUTdXeEtrdnE4MmRFWWFtTDZ3WU1KdU1SZ1RDUT09Cg==",
-      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.3/slowka-0.2.3-1.x86_64.rpm"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTkFDc3l0UVljTXhKeS84ZklCWEpwamJWZ1VWNmdFV2Rzb3JsRGtPNkdrYVBxaFpBSTJZODZUbUVsYi9RRlFjREFrTmVaMkk1RHRpWEhvNURzN0NZbTlBWldWVThpVncwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODkwMTY2CWZpbGU6c2xvd2thLTAuMi40LTEueDg2XzY0LnJwbQpIeVY2ZjNKclMwV0VYVldna25nV0hPZ2NJRk5LbTUvQ0tsYjMyekJheUIyYmtBMkU4L1ZpYStLQmlyWnJ1ZHFlTGRQRGNCbWVURGZUMFBpeld1UGJBZz09Cg==",
+      "url": "https://github.com/Lampsio/Stream_Games/releases/download/app-v0.2.4/slowka-0.2.4-1.x86_64.rpm"
     }
   }
 }
