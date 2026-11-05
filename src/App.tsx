@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle, Plus, FastForward, Snowflake, Bug, Users, Swords, ArrowRight, ArrowLeft, Shuffle, UserPlus, Check, MoreVertical } from 'lucide-react';
+import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle, FastForward, Snowflake, Bug, Users, Swords, ArrowRight, ArrowLeft, Shuffle, UserPlus, Check, MoreVertical } from 'lucide-react';
 import tmi from 'tmi.js';
 import confetti from 'canvas-confetti';
 import { check } from '@tauri-apps/plugin-updater';
@@ -70,6 +70,8 @@ interface UserStats {
   maxLevelReached: number;
   totalShields: number;
   teamMvp?: number;
+  blueTeamMvp?: number;
+  redTeamMvp?: number;
 }
 
 interface DebugLog {
@@ -82,7 +84,7 @@ interface DebugLog {
 export default function App() {
   const [gameState, setGameState] = useState<'lobby' | 'countdown' | 'playing' | 'roundSummary' | 'stats' | 'ended'>('lobby');
   const [debugLogs, setDebugLogs] = useState<DebugLog[]>([]);
-  const [showDebug, setShowDebug] = useState(false);
+  const [showDebug] = useState(false);
   const tmiClientRef = useRef<tmi.Client | null>(null);
   const [countdownValue, setCountdownValue] = useState(5);
   const [levelIndex, setLevelIndex] = useState(0);
@@ -128,7 +130,7 @@ export default function App() {
   const [teamScores, setTeamScores] = useState<{ blue: number; red: number }>({ blue: 0, red: 0 });
   const [teamPlayerStats, setTeamPlayerStats] = useState<Record<string, TeamMemberStat>>({});
   const [currentTeamStreak, setCurrentTeamStreak] = useState<{ team: 'blue' | 'red' | null; count: number }>({ team: null, count: 0 });
-  const [maxTeamStreak, setMaxTeamStreak] = useState<{ blue: number; red: number }>({ blue: 0, red: 0 });
+  const maxTeamStreakRef = useRef<{ blue: number; red: number }>({ blue: 0, red: 0 });
   const [teamMatchWinner, setTeamMatchWinner] = useState<'blue' | 'red' | 'draw' | null>(null);
   const [teamWinReason, setTeamWinReason] = useState<'ko' | 'timeout' | 'clear' | null>(null);
   const [teamRound, setTeamRound] = useState<number>(1);
@@ -681,14 +683,18 @@ export default function App() {
             maxLevelReached: 0,
             totalShields: 0,
             teamMvp: 0,
+            blueTeamMvp: 0,
+            redTeamMvp: 0,
           };
           next[k] = {
             ...cur,
             displayName: cur.displayName || blueMvpUser,
             teamMvp: (cur.teamMvp || 0) + 1,
+            blueTeamMvp: (cur.blueTeamMvp || 0) + 1,
           };
-          addDebugLog("Awarded TEAM MVP (+1)", { user: blueMvpUser, team: "blue", totalMvp: next[k].teamMvp });
+          addDebugLog("Awarded BLUE TEAM MVP (+1)", { user: blueMvpUser, totalMvp: next[k].teamMvp, blueMvp: next[k].blueTeamMvp });
         }
+
 
         if (redMvpUser) {
           const k = redMvpUser.toLowerCase();
@@ -704,15 +710,17 @@ export default function App() {
             maxLevelReached: 0,
             totalShields: 0,
             teamMvp: 0,
+            blueTeamMvp: 0,
+            redTeamMvp: 0,
           };
           next[k] = {
             ...cur,
             displayName: cur.displayName || redMvpUser,
             teamMvp: (cur.teamMvp || 0) + 1,
+            redTeamMvp: (cur.redTeamMvp || 0) + 1,
           };
-          addDebugLog("Awarded TEAM MVP (+1)", { user: redMvpUser, team: "red", totalMvp: next[k].teamMvp });
+          addDebugLog("Awarded RED TEAM MVP (+1)", { user: redMvpUser, totalMvp: next[k].teamMvp, redMvp: next[k].redTeamMvp });
         }
-        
       }
 
       if (isSuccess || isTeamWin || isOngoingTeamMatch) {
@@ -1377,6 +1385,8 @@ export default function App() {
              maxLevelReached: 0,
              totalShields: 0,
              teamMvp: 0,
+             blueTeamMvp: 0,
+             redTeamMvp: 0
           };
           
           const next = {
@@ -1461,10 +1471,10 @@ export default function App() {
           const actualPull = Number((basePull * multiplier).toFixed(1));
 
           setCurrentTeamStreak({ team: scoringTeam, count: newStreakCount });
-          setMaxTeamStreak(prev => ({
-            ...prev,
-            [scoringTeam]: Math.max(prev[scoringTeam], newStreakCount)
-          }));
+          maxTeamStreakRef.current = {
+            ...maxTeamStreakRef.current,
+            [scoringTeam]: Math.max(maxTeamStreakRef.current[scoringTeam], newStreakCount)
+          };
 
           setTeamPlayerStats(prev => {
             const cur = prev[userKey] || { username: rawUser, team: scoringTeam, points: 0, wordsFound: 0 };
@@ -1649,7 +1659,7 @@ export default function App() {
     setTeamScores({ blue: 0, red: 0 });
     setTeamPlayerStats({});
     setCurrentTeamStreak({ team: null, count: 0 });
-    setMaxTeamStreak({ blue: 0, red: 0 });
+    maxTeamStreakRef.current = { blue: 0, red: 0 };
     setTeamMatchWinner(null);
     setTeamWinReason(null);
     setLastPullDelta(null);
@@ -2540,6 +2550,8 @@ export default function App() {
                                 maxLevelReached: 0,
                                 totalShields: 0,
                                 teamMvp: 0,
+                                blueTeamMvp: 0,
+                                redTeamMvp: 0
                               }),
                               points: (prev[userKey]?.points || 0) + guess.length
                           }
@@ -3570,7 +3582,7 @@ export default function App() {
               { id: 'masters', icon: Crown, label: 'MISTRZ', desc: 'Pierwsze odkrycia głównego hasła poziomu' },
               { id: 'streaks', icon: Flame, label: 'SERIE', desc: 'Najdłuższa seria wygranych rund z rzędu' },
               { id: 'shields', icon: ShieldCheck, label: 'TARCZE', desc: 'Łączna liczba zebranych tarcz ochronnych' },
-              { id: 'teamMvp', icon: Swords, label: 'MVP DRUŻYNY', desc: 'Łączna liczba tytułów MVP zdobytych w dowolnej drużynie' }
+              { id: 'teamMvp', icon: Swords, label: 'MVP DRUŻYNY', desc: 'Tytuły MVP drużyny przyznawane najlepszym graczom Niebieskich i Czerwonych po zakończeniu meczu' }
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = statsTab === tab.id;
@@ -3676,7 +3688,7 @@ export default function App() {
                       {statsTab === 'masters' && 'Liczba odkrytych haseł głównych (tych na samej górze).'}
                       {statsTab === 'streaks' && 'Rekordowa liczba rund wygranych pod rząd przez jednego gracza.'}
                       {statsTab === 'shields' && 'Łączna liczba tarcz zdobytych we wszystkich grach.'}
-                      {statsTab === 'teamMvp' && 'Łączna liczba tytułów MVP zdobytych przez gracza, niezależnie od tego, czy grał w drużynie Niebieskich, czy Czerwonych.'}
+                      {statsTab === 'teamMvp' && 'Tytuły MVP drużyny przyznawane najlepszym graczom Niebieskich oraz Czerwonych po zakończeniu każdej gry.'}
                     </p>
                   </div>
 
@@ -3719,6 +3731,17 @@ export default function App() {
                                 <UserBadges username={key} size="w-5 h-5" />
                                 <div className="flex flex-col">
                                   <span className={`font-bold text-lg transition-all ${idx < 3 ? 'text-white' : 'text-text-secondary'}`}>{item.displayName || key}</span>
+                                  {statsTab === 'teamMvp' && ((item.blueTeamMvp || 0) > 0 || (item.redTeamMvp || 0) > 0) && (
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <span className="text-[10px] font-mono font-bold text-blue-400">
+                                        Niebiescy: {item.blueTeamMvp || 0}
+                                      </span>
+                                      <span className="text-white/20">•</span>
+                                      <span className="text-[10px] font-mono font-bold text-red-400">
+                                        Czerwoni: {item.redTeamMvp || 0}
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
