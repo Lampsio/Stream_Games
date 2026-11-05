@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.2.3",
+    "date": "2026-05-11",
+    "title": "Tryb Drużynowy i Nowe Menu",
+    "changes": [
+      "Poszerzono zasób zestawu słów do zgadywania",
+      "Dodano nowy tryb drużynowy, który polega na przeciąganiu linii na podstawie zgadniętych słówek",
+      "Zmieniono menu główne UI z możliwością wybrania trybu gry",
+      "Dodano nową statystykę MVP drużyny, która pokazuje najlepszego gracza na koniec gry",
+      "Dodano instrukcję jak grać w nowym trybie drużynowym"
+    ]
+},
+  {
     "version": "0.2.2",
     "date": "2026-05-10",
     "title": "Aktualizacja Mechaniki i Interfejsu",

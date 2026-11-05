@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle, Plus, FastForward, Snowflake, Bug } from 'lucide-react';
+import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle, Plus, FastForward, Snowflake, Bug, Users, Swords, ArrowRight, ArrowLeft, Shuffle, UserPlus, Check, MoreVertical } from 'lucide-react';
 import tmi from 'tmi.js';
 import confetti from 'canvas-confetti';
 import { check } from '@tauri-apps/plugin-updater';
@@ -15,6 +15,15 @@ import { loadStats, saveStats, clearStats } from './lib/persistence';
 import { AUDIO_PATHS } from './constants';
 import { FaTwitch } from "react-icons/fa";
 import "./App.css";
+
+export type GameMode = 'solo' | 'teams';
+
+export interface TeamMemberStat {
+  username: string;
+  team: 'blue' | 'red';
+  points: number;
+  wordsFound: number;
+}
 
 interface Level {
   masterWord: string;
@@ -46,6 +55,7 @@ interface ChatLog {
   message: string;
   color: string;
   isCorrect?: boolean;
+  team?: 'blue' | 'red' | 'spectator';
 }
 
 interface UserStats {
@@ -59,6 +69,7 @@ interface UserStats {
   maxStreak: number;
   maxLevelReached: number;
   totalShields: number;
+  teamMvp?: number;
 }
 
 interface DebugLog {
@@ -71,7 +82,7 @@ interface DebugLog {
 export default function App() {
   const [gameState, setGameState] = useState<'lobby' | 'countdown' | 'playing' | 'roundSummary' | 'stats' | 'ended'>('lobby');
   const [debugLogs, setDebugLogs] = useState<DebugLog[]>([]);
-  const [showDebug] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const tmiClientRef = useRef<tmi.Client | null>(null);
   const [countdownValue, setCountdownValue] = useState(5);
   const [levelIndex, setLevelIndex] = useState(0);
@@ -82,6 +93,8 @@ export default function App() {
   const [globalStats, setGlobalStats] = useState<Record<string, UserStats>>({});
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showGameMenu, setShowGameMenu] = useState(false);
+  const [helpTab, setHelpTab] = useState<'solo' | 'teams'>('solo');
   const [showChangelog, setShowChangelog] = useState(false);
   const [shuffledLetters, setShuffledLetters] = useState<Letter[]>([]);
   const lettersPoolRef = useRef<Letter[]>([]);
@@ -95,12 +108,35 @@ export default function App() {
     const saved = localStorage.getItem('playedMasterWords');
     return saved ? JSON.parse(saved) : [];
   });
-  const [statsTab, setStatsTab] = useState<'world' | 'points' | 'rounds' | 'games' | 'masters' | 'streaks' | 'shields'>('world');
+  const [statsTab, setStatsTab] = useState<'world' | 'points' | 'rounds' | 'games' | 'masters' | 'streaks' | 'shields' | 'teamMvp'>('world');
   const [blockedPlayer, setBlockedPlayer] = useState<{ username: string; expiresAt: number } | null>(null);
+  const blockedPlayerRef = useRef<{ username: string; expiresAt: number } | null>(null);
   const [frozenWords, setFrozenWords] = useState<Record<string, number>>({});
   const [activeParasites, setActiveParasites] = useState<Record<string, { victim: string; expiresAt: number }>>({});
   const frozenWordsRef = useRef<Record<string, number>>({});
   const activeParasitesRef = useRef<Record<string, { victim: string; expiresAt: number }>>({});
+
+  // Team Mode States (Drużynówka / Przeciąganie Liny)
+  const [gameMode, setGameMode] = useState<GameMode>(() => {
+    const saved = localStorage.getItem('gameMode');
+    return (saved === 'teams' ? 'teams' : 'solo') as GameMode;
+  });
+  const [teamLobbyPlayers, setTeamLobbyPlayers] = useState<string[]>([]);
+  const [blueTeam, setBlueTeam] = useState<string[]>([]);
+  const [redTeam, setRedTeam] = useState<string[]>([]);
+  const [ropePosition, setRopePosition] = useState<number>(50); // 50% = Środek, 0% = K.O. Niebiescy, 100% = K.O. Czerwoni
+  const [teamScores, setTeamScores] = useState<{ blue: number; red: number }>({ blue: 0, red: 0 });
+  const [teamPlayerStats, setTeamPlayerStats] = useState<Record<string, TeamMemberStat>>({});
+  const [currentTeamStreak, setCurrentTeamStreak] = useState<{ team: 'blue' | 'red' | null; count: number }>({ team: null, count: 0 });
+  const [maxTeamStreak, setMaxTeamStreak] = useState<{ blue: number; red: number }>({ blue: 0, red: 0 });
+  const [teamMatchWinner, setTeamMatchWinner] = useState<'blue' | 'red' | 'draw' | null>(null);
+  const [teamWinReason, setTeamWinReason] = useState<'ko' | 'timeout' | 'clear' | null>(null);
+  const [teamRound, setTeamRound] = useState<number>(1);
+  const [lastPullDelta, setLastPullDelta] = useState<{ team: 'blue' | 'red'; amount: number; word: string; user: string } | null>(null);
+
+  useEffect(() => {
+    blockedPlayerRef.current = blockedPlayer;
+  }, [blockedPlayer]);
 
   useEffect(() => {
     frozenWordsRef.current = frozenWords;
@@ -125,11 +161,11 @@ export default function App() {
   });
   const [wordCols, setWordCols] = useState(() => {
     const saved = localStorage.getItem('wordCols');
-    return saved ? parseInt(saved) : 4;
+    return saved ? parseInt(saved) : 3;
   });
   const [wordHeight, setWordHeight] = useState(() => {
     const saved = localStorage.getItem('wordHeight');
-    return saved ? parseInt(saved) : 75; // Default 24rem (96px)
+    return saved ? parseInt(saved) : 96; // Default 24rem (96px)
   });
   const [isCompactLayout, setIsCompactLayout] = useState(() => {
     const saved = localStorage.getItem('isCompactLayout');
@@ -139,14 +175,15 @@ export default function App() {
   const [showDevPanel, setShowDevPanel] = useState(false);
   const [isDevAuthorized, setIsDevAuthorized] = useState(false);
   const [devPasswordInput, setDevPasswordInput] = useState("");
-  const [appVersion, setAppVersion] = useState('0.1.9');
+  const [devCustomGuessWord, setDevCustomGuessWord] = useState("");
+  const [appVersion, setAppVersion] = useState(CHANGELOG_DATA[0]?.version || '0.2.4');
   const [timeLeft, setTimeLeft] = useState(INITIAL_TIME);
   const [hints, setHints] = useState<Record<string, number[]>>({}); // word: revealedIndices[]
   const [lastActionTime, setLastActionTime] = useState(Date.now());
 
   // Audio Settings
   const [soundVolume, setSoundVolume] = useState(0.5);
-  const [musicVolume, setMusicVolume] = useState(0.1);
+  const [musicVolume, setMusicVolume] = useState(0.3);
   const [settingsTab, setSettingsTab] = useState<'audio' | 'layout' | 'twitch' | 'admin' | 'developer'>('audio');
   const [showSettings, setShowSettings] = useState(false);
   
@@ -170,6 +207,31 @@ export default function App() {
     audio.volume = soundVolume * volumeScale;
     audio.play().catch(e => console.log("Sound blocked:", e));
   }, [soundVolume]);
+
+  const showFeedback = useCallback((message: string, type: 'success' | 'error' | 'freeze' | 'hazard', soundKey?: keyof typeof AUDIO_PATHS) => {
+    setFeedback({ message, type });
+    
+    let soundUrl: string = "";
+    
+    if (soundKey && AUDIO_PATHS[soundKey]) {
+      soundUrl = AUDIO_PATHS[soundKey];
+    } else {
+      // Fallbacks if no specific soundKey provided
+      soundUrl = type === 'success' 
+        ? AUDIO_PATHS.WORD_CORRECT
+        : type === 'freeze'
+          ? AUDIO_PATHS.BONUS_FREEZE
+          : type === 'hazard'
+            ? AUDIO_PATHS.HAZARD_TRAP
+            : AUDIO_PATHS.WORD_CORRECT;
+    }
+    
+    if (soundUrl) {
+      playSound(soundUrl, 1);
+    }
+
+    setTimeout(() => setFeedback({ message: "", type: null }), 2000);
+  }, [playSound]);
 
   // Manage background music
   useEffect(() => {
@@ -434,6 +496,15 @@ export default function App() {
     setIsTimeFrozen(false);
     setBlockedPlayer(null);
     setSessionShields({});
+    setTeamRound(1);
+    setRopePosition(50);
+    setTeamScores({ blue: 0, red: 0 });
+    setTeamPlayerStats({});
+    setCurrentTeamStreak({ team: null, count: 0 });
+    setTeamMatchWinner(null);
+    setTeamWinReason(null);
+    setLastPullDelta(null);
+    teamMvpAwardedRef.current = false;
   }, [generateLevelSequence]);
 
   // Use Refs for logic that needs stable values without re-triggering effects
@@ -450,6 +521,19 @@ export default function App() {
   const lastProcessedLevelRef = useRef(-1);
   const processedWordsInRoundRef = useRef<Set<string>>(new Set());
 
+  // Team Mode Refs
+  const gameModeRef = useRef(gameMode);
+  const teamLobbyPlayersRef = useRef(teamLobbyPlayers);
+  const blueTeamRef = useRef(blueTeam);
+  const redTeamRef = useRef(redTeam);
+  const ropePositionRef = useRef(ropePosition);
+  const currentTeamStreakRef = useRef(currentTeamStreak);
+  const teamMatchWinnerRef = useRef(teamMatchWinner);
+  const teamWinReasonRef = useRef(teamWinReason);
+  const teamRoundRef = useRef(teamRound);
+  const teamPlayerStatsRef = useRef(teamPlayerStats);
+  const teamMvpAwardedRef = useRef(false);
+
   // Sync refs immediately in render
   gameStateRef.current = gameState;
   possibleAnswersRef.current = possibleAnswers;
@@ -458,6 +542,16 @@ export default function App() {
   sessionScoresRef.current = sessionScores;
   sessionShieldsRef.current = sessionShields;
   levelIndexRef.current = levelIndex;
+  gameModeRef.current = gameMode;
+  teamLobbyPlayersRef.current = teamLobbyPlayers;
+  blueTeamRef.current = blueTeam;
+  redTeamRef.current = redTeam;
+  ropePositionRef.current = ropePosition;
+  currentTeamStreakRef.current = currentTeamStreak;
+  teamMatchWinnerRef.current = teamMatchWinner;
+  teamWinReasonRef.current = teamWinReason;
+  teamRoundRef.current = teamRound;
+  teamPlayerStatsRef.current = teamPlayerStats;
 
   const totalLettersRef = useRef(0);
   totalLettersRef.current = totalLettersInLevel;
@@ -476,6 +570,39 @@ export default function App() {
     
     addDebugLog("Processing Results", { isSuccess, level: levelIndex, sessionId: currentSessionIdRef.current });
 
+    let roundTeamWinner: 'blue' | 'red' | 'draw' | null = null;
+    if (gameModeRef.current === 'teams') {
+      let winner = teamMatchWinnerRef.current;
+      let reason = teamWinReasonRef.current;
+      if (!winner) {
+        if (ropePositionRef.current >= 100) {
+          winner = 'blue';
+          reason = 'ko';
+          teamMatchWinnerRef.current = 'blue';
+          teamWinReasonRef.current = 'ko';
+          setTeamMatchWinner('blue');
+          setTeamWinReason('ko');
+        } else if (ropePositionRef.current <= 0) {
+          winner = 'red';
+          reason = 'ko';
+          teamMatchWinnerRef.current = 'red';
+          teamWinReasonRef.current = 'ko';
+          setTeamMatchWinner('red');
+          setTeamWinReason('ko');
+        } else {
+          // NO K.O.! The match continues into the next round!
+          winner = null;
+          reason = null;
+          teamMatchWinnerRef.current = null;
+          teamWinReasonRef.current = null;
+          setTeamMatchWinner(null);
+          setTeamWinReason(null);
+        }
+      }
+      roundTeamWinner = winner;
+      addDebugLog("Team Match Round Finished", { winner, reason, preservedRope: ropePositionRef.current, isKO: !!winner });
+    }
+
     const contributors = foundWordsRef.current.reduce((acc, fw) => {
       const key = fw.user.toLowerCase();
       acc[key] = (acc[key] || 0) + fw.word.length;
@@ -483,19 +610,43 @@ export default function App() {
     }, {} as Record<string, number>);
     const sortedRound = (Object.entries(contributors) as [string, number][]).sort((a, b) => b[1] - a[1]);
 
+    // Prepare team MVP awards BEFORE the React state updater.
+    // State updater callbacks must stay pure: React StrictMode may invoke them twice.
+    const teamWinner = roundTeamWinner || teamMatchWinnerRef.current;
+    const isTeamWin = gameModeRef.current === 'teams' && (teamWinner === 'blue' || teamWinner === 'red');
+    let blueMvpUser: string | undefined;
+    let redMvpUser: string | undefined;
+    if (isTeamWin && !teamMvpAwardedRef.current) {
+      teamMvpAwardedRef.current = true;
+      const allMemberStats = Object.values(teamPlayerStatsRef.current || {}) as TeamMemberStat[];
+      const blueStats = allMemberStats.filter(p => p.team === 'blue' && p.points > 0);
+      const redStats = allMemberStats.filter(p => p.team === 'red' && p.points > 0);
+      blueMvpUser = [...blueStats].sort((a, b) => b.points - a.points || b.wordsFound - a.wordsFound)[0]?.username;
+      redMvpUser = [...redStats].sort((a, b) => b.points - a.points || b.wordsFound - a.wordsFound)[0]?.username;
+      addDebugLog('Team MVP candidates prepared', {
+        winner: teamWinner,
+        blueMvpUser: blueMvpUser || null,
+        redMvpUser: redMvpUser || null,
+        bluePlayersWithPoints: blueStats.length,
+        redPlayersWithPoints: redStats.length
+      });
+    }
+
     setGlobalStats(prev => {
       const next = { ...prev };
       const roundPlayerSet = new Set(Object.keys(contributors));
 
-      // Update maxLevelReached for all contributors in this round
-      roundPlayerSet.forEach(userKey => {
-        if (next[userKey]) {
-          next[userKey] = {
-            ...next[userKey],
-            maxLevelReached: Math.max(next[userKey].maxLevelReached || 0, levelIndex + 1)
-          };
-        }
-      });
+      // Update maxLevelReached for all contributors in this round (ONLY in classic mode)
+      if (gameModeRef.current !== 'teams') {
+        roundPlayerSet.forEach(userKey => {
+          if (next[userKey]) {
+            next[userKey] = {
+              ...next[userKey],
+              maxLevelReached: Math.max(next[userKey].maxLevelReached || 0, levelIndex + 1)
+            };
+          }
+        });
+      }
 
       // 1. Award Round Win to #1 (Leader) ALWAYS, regardless of isSuccess
       // This ensures the leader of the round is recognized even on failure
@@ -510,8 +661,61 @@ export default function App() {
         }
       }
 
-      // 2. Award Participation and Streaks ONLY on Success
-      if (isSuccess) {
+      // 2. Award Participation and Streaks ONLY on Success (or on Team victory / ongoing team match)
+      const isOngoingTeamMatch = gameModeRef.current === 'teams' && !teamWinner;
+
+      // Award +1 Team MVP to the highest-scoring player on each team.
+      // Only players with >0 points qualify; empty teams receive no MVP.
+      if (isTeamWin) {
+        if (blueMvpUser) {
+          const k = blueMvpUser.toLowerCase();
+          const cur = next[k] || {
+            displayName: blueMvpUser,
+            points: 0,
+            wins: 0,
+            roundWins: 0,
+            gameWins: 0,
+            masterWordWins: 0,
+            currentStreak: 0,
+            maxStreak: 0,
+            maxLevelReached: 0,
+            totalShields: 0,
+            teamMvp: 0,
+          };
+          next[k] = {
+            ...cur,
+            displayName: cur.displayName || blueMvpUser,
+            teamMvp: (cur.teamMvp || 0) + 1,
+          };
+          addDebugLog("Awarded TEAM MVP (+1)", { user: blueMvpUser, team: "blue", totalMvp: next[k].teamMvp });
+        }
+
+        if (redMvpUser) {
+          const k = redMvpUser.toLowerCase();
+          const cur = next[k] || {
+            displayName: redMvpUser,
+            points: 0,
+            wins: 0,
+            roundWins: 0,
+            gameWins: 0,
+            masterWordWins: 0,
+            currentStreak: 0,
+            maxStreak: 0,
+            maxLevelReached: 0,
+            totalShields: 0,
+            teamMvp: 0,
+          };
+          next[k] = {
+            ...cur,
+            displayName: cur.displayName || redMvpUser,
+            teamMvp: (cur.teamMvp || 0) + 1,
+          };
+          addDebugLog("Awarded TEAM MVP (+1)", { user: redMvpUser, team: "red", totalMvp: next[k].teamMvp });
+        }
+        
+      }
+
+      if (isSuccess || isTeamWin || isOngoingTeamMatch) {
         roundPlayerSet.forEach(userKey => {
           if (next[userKey]) {
             next[userKey] = {
@@ -552,13 +756,23 @@ export default function App() {
           next[u] = { ...next[u], currentStreak: 0 };
         });
       }
+      saveStats(next);
       return next;
     });
 
     setGameState('roundSummary');
     
     // Play round end sound
-    playSound(isSuccess ? AUDIO_PATHS.ROUND_SUCCESS : AUDIO_PATHS.ROUND_FAILURE, 1);
+    if (gameModeRef.current === 'teams') {
+      const winner = teamMatchWinnerRef.current;
+      if (winner === 'blue' || winner === 'red') {
+        playSound(AUDIO_PATHS.ROUND_SUCCESS, 1);
+      } else {
+        playSound(AUDIO_PATHS.ROUND_SUCCESS, 0.7);
+      }
+    } else {
+      playSound(isSuccess ? AUDIO_PATHS.ROUND_SUCCESS : AUDIO_PATHS.ROUND_FAILURE, 1);
+    }
   }, [levelIndex, addDebugLog, playSound]);
 
   // Timer logic
@@ -811,6 +1025,62 @@ export default function App() {
     setGameState('countdown');
   };
 
+  const nextTeamRound = useCallback(() => {
+    // Track played master word
+    const lastWord = currentLevel.masterWord;
+    setPlayedMasterWords(prev => [...prev, lastWord]);
+
+    // Calculate level jump based on completion rate of the finished round (same as classic mode)
+    const answers = possibleAnswersRef.current;
+    const found = foundWordsRef.current;
+    const roundTotalLetters = answers.reduce((acc, word) => acc + word.length, 0);
+    const roundFoundLetters = found.reduce((acc, fw) => acc + fw.word.length, 0);
+    const rate = roundTotalLetters === 0 ? 0 : (roundFoundLetters / roundTotalLetters) * 100;
+    
+    let jump = 1;
+    if (rate >= 100) jump = 3;
+    else if (rate >= 85) jump = 2;
+
+    addDebugLog("Transitioning to Next Team Round", {
+      currentRound: teamRoundRef.current,
+      nextRound: teamRoundRef.current + 1,
+      currentLevelIndex: levelIndex,
+      jump,
+      rate,
+      preservedRope: ropePositionRef.current
+    });
+
+    const nextIdx = (levelIndex + jump) >= levelSequence.length 
+      ? 0 
+      : levelIndex + jump;
+    if (nextIdx === 0 && (levelIndex + jump) >= levelSequence.length) {
+      setLevelSequence(generateLevelSequence());
+    }
+    setLevelIndex(nextIdx);
+    setTeamRound(prev => prev + 1);
+
+    // RESET ATOMIC GUARDS & ROUND-SPECIFIC STATE
+    processedWordsInRoundRef.current.clear();
+    awardProcessedRef.current = false; // RELEASE LOCK
+    setShowRoundWords(false);
+    setFoundWords([]);
+    lettersPoolRef.current = [];
+    setHints({});
+    setFrozenWords({});
+    setActiveParasites({});
+    setBlockedPlayer(null);
+    setLastActionTime(Date.now());
+    setTimeLeft(INITIAL_TIME);
+
+    // Reset current round streak combo, but keep maxTeamStreak and scores intact
+    setCurrentTeamStreak({ team: null, count: 0 });
+    setLastPullDelta(null);
+
+    // CRITICAL: ropePosition remains untouched! The rope gauge stays exactly where it was!
+    setCountdownValue(5);
+    setGameState('countdown');
+  }, [currentLevel.masterWord, levelIndex, levelSequence.length, generateLevelSequence, addDebugLog]);
+
   const triggerConfetti = (isLevelFinish = false) => {
     if (isLevelFinish) {
       const end = Date.now() + 3000;
@@ -846,6 +1116,416 @@ export default function App() {
     }
   };
 
+  // Unified chat message and guess processing (used by Twitch IRC and Developer Simulation)
+  const processIncomingChatMessage = useCallback((rawUser: string, message: string, customTags: any = {}) => {
+    const userKey = rawUser.toLowerCase();
+    const rawTrimmed = message.trim();
+    const lowerCmd = rawTrimmed.toLowerCase();
+
+    // Team Mode Lobby Commands (!join / !dolacz / !leave)
+    if (lowerCmd === '!join' || lowerCmd === '!dolacz' || lowerCmd === '!dołącz') {
+      if (gameStateRef.current === 'lobby' && gameModeRef.current === 'teams') {
+        setTeamLobbyPlayers(prev => {
+          if (prev.some(p => p.toLowerCase() === userKey)) return prev;
+          return [...prev, rawUser];
+        });
+        if (blueTeamRef.current.length > 0 || redTeamRef.current.length > 0) {
+          if (blueTeamRef.current.length <= redTeamRef.current.length) {
+            setBlueTeam(prev => prev.some(p => p.toLowerCase() === userKey) ? prev : [...prev, rawUser]);
+          } else {
+            setRedTeam(prev => prev.some(p => p.toLowerCase() === userKey) ? prev : [...prev, rawUser]);
+          }
+        }
+        showFeedback(`${rawUser} DOŁĄCZYŁ DO GRY! ⚔️`, "success");
+        return;
+      }
+    }
+
+    if (lowerCmd === '!leave' || lowerCmd === '!opusc' || lowerCmd === '!opuść') {
+      if (gameStateRef.current === 'lobby' && gameModeRef.current === 'teams') {
+        setTeamLobbyPlayers(prev => prev.filter(p => p.toLowerCase() !== userKey));
+        setBlueTeam(prev => prev.filter(p => p.toLowerCase() !== userKey));
+        setRedTeam(prev => prev.filter(p => p.toLowerCase() !== userKey));
+        showFeedback(`${rawUser} opuścił poczekalnię`, "hazard");
+        return;
+      }
+    }
+
+    // Clean up message: remove leading ! or / and trim for guessing
+    let cleanMessage = message.trim();
+    if (cleanMessage.startsWith('!') || cleanMessage.startsWith('/')) {
+      cleanMessage = cleanMessage.substring(1).trim();
+    }
+    
+    const guess = cleanMessage.toUpperCase();
+
+    // Determine team affiliation
+    let userTeam: 'blue' | 'red' | 'spectator' = 'spectator';
+    if (gameModeRef.current === 'teams') {
+      if (blueTeamRef.current.some(p => p.toLowerCase() === userKey)) {
+        userTeam = 'blue';
+      } else if (redTeamRef.current.some(p => p.toLowerCase() === userKey)) {
+        userTeam = 'red';
+      }
+    }
+
+    // Check if player is blocked
+    if (blockedPlayerRef.current && blockedPlayerRef.current.username.toLowerCase() === userKey && Date.now() < blockedPlayerRef.current.expiresAt) {
+      return;
+    }
+
+    const color = customTags.color || (userTeam === 'blue' ? "#3b82f6" : userTeam === 'red' ? "#ef4444" : "#9146FF");
+
+    // In Team Mode, spectators can chat but cannot score/solve words
+    if (gameModeRef.current === 'teams' && gameStateRef.current === 'playing' && userTeam === 'spectator') {
+      const newMessage: ChatLog = {
+        id: customTags.id || Math.random().toString(),
+        username: rawUser,
+        message: message,
+        color: color,
+        isCorrect: false,
+        team: 'spectator',
+      };
+      setMessages((prev) => [...prev, newMessage].slice(-50));
+      return;
+    }
+
+    // Check if correct before adding to log
+    let isCorrectMessage = false;
+    if (gameStateRef.current === 'playing' && guess.length >= 3) {
+      if (!processedWordsInRoundRef.current.has(guess) && possibleAnswersRef.current.includes(guess)) {
+        isCorrectMessage = true;
+      }
+    }
+
+    // Add to chat log
+    const newMessage: ChatLog = {
+      id: customTags.id || Math.random().toString(),
+      username: rawUser,
+      message: message,
+      color: color,
+      isCorrect: isCorrectMessage,
+      team: gameModeRef.current === 'teams' ? userTeam : undefined,
+    };
+    setMessages((prev) => [...prev, newMessage].slice(-50));
+    
+    if (gameStateRef.current === 'playing') {
+      if (guess.length < 3) return;
+
+      // Check if word is frozen
+      const frostExpiry = frozenWordsRef.current[guess];
+      if (frostExpiry && Date.now() < frostExpiry) {
+        showFeedback(`${rawUser}: SŁOWO "${guess}" JEST ZAMROŻONE! ❄️`, "hazard", 'HAZARD_STUN');
+        return;
+      }
+
+      // Synchronous check to prevent double-processing of the same word in the same round
+      if (processedWordsInRoundRef.current.has(guess)) {
+        addDebugLog("Duplicate word blocked", { guess, user: rawUser });
+        return;
+      }
+      
+      if (possibleAnswersRef.current.includes(guess)) {
+        processedWordsInRoundRef.current.add(guess);
+        addDebugLog("Match found", { guess, user: rawUser });
+        setLastActionTime(Date.now());
+        
+        const isMaster = guess === currentLevelRef.current.masterWord;
+        let specialType = specialWordsRef.current[guess];
+        
+        // Mystery Resolution
+        let mysteryResolvedType: SpecialWordType = null;
+        if (specialType === 'MYSTERY') {
+          const allTypes: SpecialWordType[] = ['FREEZE', 'GOLD', 'TIME', 'SCANNER', 'STORM', 'DARKNESS', 'TRAP', 'LEADER_BLOCK', 'FROST_BITE', 'PARASITE'];
+          mysteryResolvedType = allTypes[Math.floor(Math.random() * allTypes.length)];
+          specialType = mysteryResolvedType;
+          showFeedback(`${rawUser}: NIESPODZIANKA! 🎁`, "success", 'BONUS_MYSTERY');
+        }
+
+        let pointsToAdd = specialType === 'GOLD' ? guess.length + 10 : guess.length;
+        
+        // Helper to check and consume shield
+        const hasShield = (user: string) => {
+          const shields = sessionShieldsRef.current[user] || 0;
+          if (shields > 0) {
+            setSessionShields(prev => ({ ...prev, [user]: shields - 1 }));
+            return true;
+          }
+          return false;
+        };
+
+        // Handle Special Effects
+        if (specialType === 'SHIELD') {
+          setSessionShields(prev => ({ 
+            ...prev, 
+            [rawUser]: Math.min((prev[rawUser] || 0) + 1, 3) 
+          }));
+          showFeedback(`${rawUser}: TARCZA ZDOBYTA! 🛡️`, "success", 'BONUS_SHIELD');
+        } else if (specialType === 'FREEZE') {
+          setIsTimeFrozen(true);
+          showFeedback(`${rawUser}: CZAS ZAMROŻONY! (10s)`, "freeze", 'BONUS_FREEZE');
+          setTimeout(() => setIsTimeFrozen(false), 10000);
+        } else if (specialType === 'TIME') {
+          setTimeLeft(prev => prev + 15);
+          showFeedback(`${rawUser}: DODATKOWY CZAS! (+15s)`, "success", 'BONUS_TIME');
+        } else if (specialType === 'SCANNER') {
+          showFeedback(`${rawUser}: SKANER LITER!`, "success", 'BONUS_SCANNER');
+          setHints(prev => {
+            const next = { ...prev };
+            const hiddenWords = possibleAnswersRef.current.filter(w => !foundWordsRef.current.find(fw => fw.word === w));
+            const count = Math.ceil(hiddenWords.length / 2);
+            const selected = hiddenWords.sort(() => Math.random() - 0.5).slice(0, count);
+            
+            selected.forEach(word => {
+              if (!next[word]) next[word] = [];
+              if (!next[word].includes(0)) {
+                next[word] = [...next[word], 0].sort((a, b) => a - b);
+              }
+            });
+            return next;
+          });
+        } else if (specialType === 'STORM') {
+          if (hasShield(rawUser)) {
+            showFeedback(`${rawUser}: TARCZA CHRONI PRZED SZTORMEM! 🛡️`, "success", 'BONUS_SHIELD');
+          } else {
+            shuffleLetters(true);
+            showFeedback(`SZTORM! LITERKI ZOSTAŁY PRZETASOWANE! 🌪️`, "hazard", 'HAZARD_STORM');
+          }
+        } else if (specialType === 'DARKNESS') {
+          if (hasShield(rawUser)) {
+            showFeedback(`${rawUser}: TARCZA CHRONI PRZED MROKIEM! 🛡️`, "success", 'BONUS_SHIELD');
+          } else {
+            showFeedback(`${rawUser}: MROK! (Litery Ukryte)`, "hazard", 'HAZARD_DARKNESS');
+            setIsDarknessActive(true);
+            setTimeout(() => setIsDarknessActive(false), 7000);
+          }
+        } else if (specialType === 'TRAP') {
+          if (hasShield(rawUser)) {
+            showFeedback(`${rawUser}: TARCZA CHRONI PRZED PUŁAPKĄ! 🛡️`, "success", 'BONUS_SHIELD');
+          } else {
+            showFeedback(`${rawUser}: PUŁAPKA! (-10s)`, "hazard", 'HAZARD_TRAP');
+            setTimeLeft(prev => Math.max(0, prev - 10));
+          }
+        } else if (specialType === 'LEADER_BLOCK') {
+          const actualLeader = (Object.entries(sessionScoresRef.current) as [string, number][]).sort((a, b) => b[1] - a[1])[0]?.[0];
+          
+          if (actualLeader && rawUser !== actualLeader) {
+            if (hasShield(actualLeader)) {
+              showFeedback(`LIDER ${actualLeader} UŻYŁ TARCZY! 🛡️`, "success", 'BONUS_SHIELD');
+            } else {
+              setBlockedPlayer({ username: actualLeader, expiresAt: Date.now() + 15000 });
+              showFeedback(`${rawUser} BLOKUJE LIDERA (${actualLeader})!`, "hazard", 'HAZARD_BLOCK');
+            }
+          } else if (actualLeader && rawUser === actualLeader) {
+            pointsToAdd += 30;
+            showFeedback(`LIDER ${rawUser} ZYSKUJE BONUS! (+30pkt)`, "success", 'BONUS_GOLD');
+          } else {
+            // No leader yet or solo play
+            pointsToAdd += 20;
+            showFeedback(`${rawUser}: BONUS SPECJALNY! (+20pkt)`, "success", 'BONUS_GOLD');
+          }
+        } else if (specialType === 'SELF_STUN') {
+          if (hasShield(rawUser)) {
+            showFeedback(`${rawUser}: TARCZA CHRONI PRZED PARALIŻEM! 🛡️`, "success", 'BONUS_SHIELD');
+          } else {
+            setBlockedPlayer({ username: rawUser, expiresAt: Date.now() + 15000 });
+            showFeedback(`${rawUser}: PARALIŻ! Zablokowany na 15s 🚫`, "hazard", 'HAZARD_STUN');
+          }
+        } else if (specialType === 'FROST_BITE') {
+          if (hasShield(rawUser)) {
+            showFeedback(`${rawUser}: TARCZA CHRONI PRZED MROŹNYM POWIEWEM! 🛡️`, "success", 'BONUS_SHIELD');
+          } else {
+            const undiscovered = possibleAnswersRef.current.filter(w => 
+              w !== currentLevelRef.current.masterWord && 
+              !foundWordsRef.current.find(fw => fw.word === w) &&
+              !(frozenWordsRef.current[w] && Date.now() < frozenWordsRef.current[w])
+            );
+
+            if (undiscovered.length > 0) {
+              const targetWord = undiscovered[Math.floor(Math.random() * undiscovered.length)];
+              setFrozenWords(prev => ({ ...prev, [targetWord]: Date.now() + 10000 }));
+              showFeedback(`${rawUser} aktywował SZRON! Zamrożono: ${targetWord} ❄️`, "hazard", 'HAZARD_FROST_BITE');
+            } else {
+              showFeedback(`${rawUser}: SZRON! (Brak słów do zamrożenia)`, "hazard", 'HAZARD_FROST_BITE');
+            }
+          }
+        } else if (specialType === 'PARASITE') {
+          const otherPlayers = Object.keys(sessionScoresRef.current).filter(u => u.toLowerCase() !== rawUser.toLowerCase());
+          if (otherPlayers.length > 0) {
+            const victim = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
+            setActiveParasites(prev => ({
+              ...prev,
+              [rawUser.toLowerCase()]: { victim, expiresAt: Date.now() + 10000 }
+            }));
+            showFeedback(`${rawUser}: PASOŻYT! Pasożytujesz na ${victim} przez 10s! 👾`, "success", 'BONUS_PARASITE');
+          } else {
+            showFeedback(`${rawUser}: PASOŻYT! (Brak przeciwników online)`, "success", 'BONUS_PARASITE');
+          }
+        }
+        
+        // 1. Update global stats (Atomic Functional Update)
+        setGlobalStats(prev => {
+          const userData = prev[userKey] || { 
+             displayName: rawUser, 
+             points: 0, 
+             wins: 0, 
+             roundWins: 0, 
+             gameWins: 0, 
+             masterWordWins: 0, 
+             currentStreak: 0, 
+             maxStreak: 0,
+             maxLevelReached: 0,
+             totalShields: 0,
+             teamMvp: 0,
+          };
+          
+          const next = {
+            ...prev,
+            [userKey]: {
+              ...userData,
+              displayName: rawUser,
+              points: (userData.points || 0) + pointsToAdd,
+              masterWordWins: isMaster ? (userData.masterWordWins || 0) + 1 : (userData.masterWordWins || 0),
+              maxLevelReached: gameModeRef.current === 'teams'
+                ? (userData.maxLevelReached || 0)
+                : Math.max(userData.maxLevelReached || 0, levelIndexRef.current + 1),
+              totalShields: specialType === 'SHIELD' ? (userData.totalShields || 0) + 1 : (userData.totalShields || 0)
+            }
+          };
+          saveStats(next);
+          return next;
+        });
+
+        // 2. UI Feedback
+        if (isMaster) {
+          triggerConfetti();
+          showFeedback(`${rawUser} ODKRYŁ HASŁO GŁÓWNE!`, "success", 'MASTER_WORD_CORRECT');
+        } else if (specialType === 'FREEZE') {
+          // Already handled above with specific 'freeze' type
+        } else if (specialType === 'GOLD') {
+          showFeedback(`${rawUser}: ZŁOTE SŁOWO! (+10pkt)`, "success", 'BONUS_GOLD');
+        } else {
+          showFeedback(`${rawUser} odgadł: ${guess}`, "success", 'WORD_CORRECT');
+        }
+
+        // 3. Update session scores
+        setSessionScores(prev => {
+          const next = { ...prev };
+          next[rawUser] = (next[rawUser] || 0) + pointsToAdd;
+
+          // PARASITE LOGIC: Check if anyone is parasite-linked to this user
+          Object.entries(activeParasitesRef.current).forEach(([activator, data]) => {
+            const pData = data as { victim: string; expiresAt: number };
+            if (pData.victim.toLowerCase() === rawUser.toLowerCase() && Date.now() < pData.expiresAt) {
+              const parasiticPoints = Math.floor(pointsToAdd * 0.5);
+              if (parasiticPoints > 0) {
+                 next[activator] = (next[activator] || 0) + parasiticPoints;
+              }
+            }
+          });
+
+          return next;
+        });
+
+        // 4. Update round words
+        setFoundWords(prev => [...prev, { word: guess, user: rawUser, points: pointsToAdd }]);
+
+        // 5. Team Mode (Tug-of-War & Team Streaks)
+        if (gameModeRef.current === 'teams') {
+          const scoringTeam = userTeam as 'blue' | 'red';
+          
+          // Direct letter count scoring:
+          // 3-letter word = 3 pts, 6-letter word = 6 pts, etc.
+          // System premiowy (Bonuses):
+          // Master word: length + 5 bonus pts
+          // GOLD special word: length + 5 bonus pts
+          let basePull = guess.length;
+          if (isMaster) {
+            basePull += 5;
+          }
+          if (specialType === 'GOLD') {
+            basePull += 5;
+          }
+          
+          // Team Streak calculation (Combo Drużynowe)
+          let newStreakCount = 1;
+          if (currentTeamStreakRef.current.team === scoringTeam) {
+            newStreakCount = currentTeamStreakRef.current.count + 1;
+          }
+
+          let multiplier = 1.0;
+          if (newStreakCount === 2) multiplier = 1.3;
+          else if (newStreakCount === 3) multiplier = 1.6;
+          else if (newStreakCount >= 4) multiplier = 2.0;
+
+          const actualPull = Number((basePull * multiplier).toFixed(1));
+
+          setCurrentTeamStreak({ team: scoringTeam, count: newStreakCount });
+          setMaxTeamStreak(prev => ({
+            ...prev,
+            [scoringTeam]: Math.max(prev[scoringTeam], newStreakCount)
+          }));
+
+          setTeamPlayerStats(prev => {
+            const cur = prev[userKey] || { username: rawUser, team: scoringTeam, points: 0, wordsFound: 0 };
+            return {
+              ...prev,
+              [userKey]: {
+                ...cur,
+                points: cur.points + pointsToAdd,
+                wordsFound: cur.wordsFound + 1
+              }
+            };
+          });
+
+          setTeamScores(prev => ({
+            ...prev,
+            [scoringTeam]: prev[scoringTeam] + pointsToAdd
+          }));
+
+          // Blue expands towards 100% (right), Red expands towards 0% (left)
+          // 50 PKT each on start (scale 0-100 total)
+          const curRope = ropePositionRef.current;
+          let nextRope = scoringTeam === 'blue' 
+            ? Math.min(100, curRope + actualPull) 
+            : Math.max(0, curRope - actualPull);
+          nextRope = Number(nextRope.toFixed(1));
+          setRopePosition(nextRope);
+          setLastPullDelta({ team: scoringTeam, amount: actualPull, word: guess, user: rawUser });
+
+          // Check KO Instant Win (100 PKT)
+          if (nextRope >= 100) {
+            setTeamMatchWinner('blue');
+            setTeamWinReason('ko');
+            showFeedback(`🏆 K.O.! NIEBIESCY WYGRYWAJĄ MECZ (100 PKT)! 🏆`, "success");
+            triggerConfetti(true);
+            setTimeout(() => {
+              processRoundResults(true);
+            }, 1200);
+          } else if (nextRope <= 0) {
+            setTeamMatchWinner('red');
+            setTeamWinReason('ko');
+            showFeedback(`🏆 K.O.! CZERWONI WYGRYWAJĄ MECZ (100 PKT)! 🏆`, "success");
+            triggerConfetti(true);
+            setTimeout(() => {
+              processRoundResults(true);
+            }, 1200);
+          } else {
+            const bonusNote = isMaster ? ' [HASŁO GŁÓWNE +5]' : specialType === 'GOLD' ? ' [ZŁOTO +5]' : '';
+            const comboNote = newStreakCount >= 2 ? ` (COMBO x${newStreakCount}! 🔥)` : '';
+            const tName = scoringTeam === 'blue' ? 'NIEBIESCY' : 'CZERWONI';
+            showFeedback(`[${tName}] ${rawUser}: +${actualPull} PKT! (${guess.length}-lit.${bonusNote})${comboNote}`, "success");
+          }
+        }
+      }
+    }
+  }, [addDebugLog, processRoundResults, showFeedback, shuffleLetters, triggerConfetti]);
+
+  const processIncomingChatMessageRef = useRef(processIncomingChatMessage);
+  useEffect(() => {
+    processIncomingChatMessageRef.current = processIncomingChatMessage;
+  }, [processIncomingChatMessage]);
+
   // Twitch Client Setup (User pattern)
   useEffect(() => {
     if (!activeChannel) return;
@@ -868,260 +1548,8 @@ export default function App() {
 
     client.on('message', (_channel, tags, message, self) => {
       if (self) return;
-      
-      // Clean up message: remove leading ! or / and trim
-      let cleanMessage = message.trim();
-      if (cleanMessage.startsWith('!') || cleanMessage.startsWith('/')) {
-        cleanMessage = cleanMessage.substring(1).trim();
-      }
-      
-      const guess = cleanMessage.toUpperCase();
       const rawUser = tags['display-name'] || tags.username || "Anonim";
-      const userKey = rawUser.toLowerCase();
-
-      // Check if player is blocked
-      if (blockedPlayer && blockedPlayer.username.toLowerCase() === userKey && Date.now() < blockedPlayer.expiresAt) {
-        return;
-      }
-
-      const color = tags.color || "#9146FF";
-
-      // Check if correct before adding to log
-      let isCorrectMessage = false;
-      if (gameStateRef.current === 'playing' && guess.length >= 3) {
-        if (!processedWordsInRoundRef.current.has(guess) && possibleAnswersRef.current.includes(guess)) {
-          isCorrectMessage = true;
-        }
-      }
-
-      // Add to chat log
-      const newMessage: ChatLog = {
-        id: tags.id || Math.random().toString(),
-        username: rawUser,
-        message: message,
-        color: color,
-        isCorrect: isCorrectMessage,
-      };
-      setMessages((prev) => [...prev, newMessage].slice(-50));
-      
-      if (gameStateRef.current === 'playing') {
-        if (guess.length < 3) return;
-
-        // Check if word is frozen
-        const frostExpiry = frozenWordsRef.current[guess];
-        if (frostExpiry && Date.now() < frostExpiry) {
-          showFeedback(`${rawUser}: SŁOWO "${guess}" JEST ZAMROŻONE! ❄️`, "hazard", 'HAZARD_STUN');
-          return;
-        }
-
-        // Synchronous check to prevent double-processing of the same word in the same round
-        if (processedWordsInRoundRef.current.has(guess)) {
-          addDebugLog("Duplicate word blocked", { guess, user: rawUser });
-          return;
-        }
-        
-        if (possibleAnswersRef.current.includes(guess)) {
-          processedWordsInRoundRef.current.add(guess);
-          addDebugLog("Match found", { guess, user: rawUser });
-          setLastActionTime(Date.now());
-          
-          const isMaster = guess === currentLevelRef.current.masterWord;
-          let specialType = specialWordsRef.current[guess];
-          
-          // Mystery Resolution
-          let mysteryResolvedType: SpecialWordType = null;
-          if (specialType === 'MYSTERY') {
-            const allTypes: SpecialWordType[] = ['FREEZE', 'GOLD', 'TIME', 'SCANNER', 'STORM', 'DARKNESS', 'TRAP', 'LEADER_BLOCK', 'FROST_BITE', 'PARASITE'];
-            mysteryResolvedType = allTypes[Math.floor(Math.random() * allTypes.length)];
-            specialType = mysteryResolvedType;
-            showFeedback(`${rawUser}: NIESPODZIANKA! 🎁`, "success", 'BONUS_MYSTERY');
-          }
-
-          let pointsToAdd = specialType === 'GOLD' ? guess.length + 10 : guess.length;
-          
-          // Helper to check and consume shield
-          const hasShield = (user: string) => {
-            const shields = sessionShieldsRef.current[user] || 0;
-            if (shields > 0) {
-              setSessionShields(prev => ({ ...prev, [user]: shields - 1 }));
-              return true;
-            }
-            return false;
-          };
-
-          // Handle Special Effects
-          if (specialType === 'SHIELD') {
-            setSessionShields(prev => ({ 
-              ...prev, 
-              [rawUser]: Math.min((prev[rawUser] || 0) + 1, 3) 
-            }));
-            showFeedback(`${rawUser}: TARCZA ZDOBYTA! 🛡️`, "success", 'BONUS_SHIELD');
-          } else if (specialType === 'FREEZE') {
-            setIsTimeFrozen(true);
-            showFeedback(`${rawUser}: CZAS ZAMROŻONY! (10s)`, "freeze", 'BONUS_FREEZE');
-            setTimeout(() => setIsTimeFrozen(false), 10000);
-          } else if (specialType === 'TIME') {
-            setTimeLeft(prev => prev + 15);
-            showFeedback(`${rawUser}: DODATKOWY CZAS! (+15s)`, "success", 'BONUS_TIME');
-          } else if (specialType === 'SCANNER') {
-            showFeedback(`${rawUser}: SKANER LITER!`, "success", 'BONUS_SCANNER');
-            setHints(prev => {
-              const next = { ...prev };
-              const hiddenWords = possibleAnswersRef.current.filter(w => !foundWordsRef.current.find(fw => fw.word === w));
-              const count = Math.ceil(hiddenWords.length / 2);
-              const selected = hiddenWords.sort(() => Math.random() - 0.5).slice(0, count);
-              
-              selected.forEach(word => {
-                if (!next[word]) next[word] = [];
-                if (!next[word].includes(0)) {
-                  next[word] = [...next[word], 0].sort((a, b) => a - b);
-                }
-              });
-              return next;
-            });
-          } else if (specialType === 'STORM') {
-            if (hasShield(rawUser)) {
-              showFeedback(`${rawUser}: TARCZA CHRONI PRZED SZTORMEM! 🛡️`, "success", 'BONUS_SHIELD');
-            } else {
-              shuffleLetters(true);
-              showFeedback(`SZTORM! LITERKI ZOSTAŁY PRZETASOWANE! 🌪️`, "hazard", 'HAZARD_STORM');
-            }
-          } else if (specialType === 'DARKNESS') {
-            if (hasShield(rawUser)) {
-              showFeedback(`${rawUser}: TARCZA CHRONI PRZED MROKIEM! 🛡️`, "success", 'BONUS_SHIELD');
-            } else {
-              showFeedback(`${rawUser}: MROK! (Litery Ukryte)`, "hazard", 'HAZARD_DARKNESS');
-              setIsDarknessActive(true);
-              setTimeout(() => setIsDarknessActive(false), 7000);
-            }
-          } else if (specialType === 'TRAP') {
-            if (hasShield(rawUser)) {
-              showFeedback(`${rawUser}: TARCZA CHRONI PRZED PUŁAPKĄ! 🛡️`, "success", 'BONUS_SHIELD');
-            } else {
-              showFeedback(`${rawUser}: PUŁAPKA! (-10s)`, "hazard", 'HAZARD_TRAP');
-              setTimeLeft(prev => Math.max(0, prev - 10));
-            }
-          } else if (specialType === 'LEADER_BLOCK') {
-            const actualLeader = (Object.entries(sessionScoresRef.current) as [string, number][]).sort((a, b) => b[1] - a[1])[0]?.[0];
-            
-            if (actualLeader && rawUser !== actualLeader) {
-              if (hasShield(actualLeader)) {
-                showFeedback(`LIDER ${actualLeader} UŻYŁ TARCZY! 🛡️`, "success", 'BONUS_SHIELD');
-              } else {
-                setBlockedPlayer({ username: actualLeader, expiresAt: Date.now() + 15000 });
-                showFeedback(`${rawUser} BLOKUJE LIDERA (${actualLeader})!`, "hazard", 'HAZARD_BLOCK');
-              }
-            } else if (actualLeader && rawUser === actualLeader) {
-              pointsToAdd += 30;
-              showFeedback(`LIDER ${rawUser} ZYSKUJE BONUS! (+30pkt)`, "success", 'BONUS_GOLD');
-            } else {
-              // No leader yet or solo play
-              pointsToAdd += 20;
-              showFeedback(`${rawUser}: BONUS SPECJALNY! (+20pkt)`, "success", 'BONUS_GOLD');
-            }
-          } else if (specialType === 'SELF_STUN') {
-            if (hasShield(rawUser)) {
-              showFeedback(`${rawUser}: TARCZA CHRONI PRZED PARALIŻEM! 🛡️`, "success", 'BONUS_SHIELD');
-            } else {
-              setBlockedPlayer({ username: rawUser, expiresAt: Date.now() + 15000 });
-              showFeedback(`${rawUser}: PARALIŻ! Zablokowany na 15s 🚫`, "hazard", 'HAZARD_STUN');
-            }
-          } else if (specialType === 'FROST_BITE') {
-            if (hasShield(rawUser)) {
-              showFeedback(`${rawUser}: TARCZA CHRONI PRZED MROŹNYM POWIEWEM! 🛡️`, "success", 'BONUS_SHIELD');
-            } else {
-              const undiscovered = possibleAnswersRef.current.filter(w => 
-                w !== currentLevelRef.current.masterWord && 
-                !foundWordsRef.current.find(fw => fw.word === w) &&
-                !(frozenWordsRef.current[w] && Date.now() < frozenWordsRef.current[w])
-              );
-
-              if (undiscovered.length > 0) {
-                const targetWord = undiscovered[Math.floor(Math.random() * undiscovered.length)];
-                setFrozenWords(prev => ({ ...prev, [targetWord]: Date.now() + 10000 }));
-                showFeedback(`${rawUser} aktywował SZRON! Zamrożono: ${targetWord} ❄️`, "hazard", 'HAZARD_FROST_BITE');
-              } else {
-                showFeedback(`${rawUser}: SZRON! (Brak słów do zamrożenia)`, "hazard", 'HAZARD_FROST_BITE');
-              }
-            }
-          } else if (specialType === 'PARASITE') {
-            const otherPlayers = Object.keys(sessionScoresRef.current).filter(u => u.toLowerCase() !== rawUser.toLowerCase());
-            if (otherPlayers.length > 0) {
-              const victim = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
-              setActiveParasites(prev => ({
-                ...prev,
-                [rawUser.toLowerCase()]: { victim, expiresAt: Date.now() + 10000 }
-              }));
-              showFeedback(`${rawUser}: PASOŻYT! Pasożytujesz na ${victim} przez 10s! 👾`, "success", 'BONUS_PARASITE');
-            } else {
-              showFeedback(`${rawUser}: PASOŻYT! (Brak przeciwników online)`, "success", 'BONUS_PARASITE');
-            }
-          }
-          
-          // 1. Update global stats (Atomic Functional Update)
-          setGlobalStats(prev => {
-            const userData = prev[userKey] || { 
-               displayName: rawUser, 
-               points: 0, 
-               wins: 0, 
-               roundWins: 0, 
-               gameWins: 0, 
-               masterWordWins: 0, 
-               currentStreak: 0, 
-               maxStreak: 0,
-               maxLevelReached: 0,
-               totalShields: 0
-            };
-            
-            const next = {
-              ...prev,
-              [userKey]: {
-                ...userData,
-                displayName: rawUser,
-                points: (userData.points || 0) + pointsToAdd,
-                masterWordWins: isMaster ? (userData.masterWordWins || 0) + 1 : (userData.masterWordWins || 0),
-                maxLevelReached: Math.max(userData.maxLevelReached || 0, levelIndexRef.current + 1),
-                totalShields: specialType === 'SHIELD' ? (userData.totalShields || 0) + 1 : (userData.totalShields || 0)
-              }
-            };
-            return next;
-          });
-
-          // 2. UI Feedback
-          if (isMaster) {
-            triggerConfetti();
-            showFeedback(`${rawUser} ODKRYŁ HASŁO GŁÓWNE!`, "success", 'MASTER_WORD_CORRECT');
-          } else if (specialType === 'FREEZE') {
-            // Already handled above with specific 'freeze' type
-          } else if (specialType === 'GOLD') {
-            showFeedback(`${rawUser}: ZŁOTE SŁOWO! (+10pkt)`, "success", 'BONUS_GOLD');
-          } else {
-            showFeedback(`${rawUser} odgadł: ${guess}`, "success", 'WORD_CORRECT');
-          }
-
-          // 3. Update session scores
-          setSessionScores(prev => {
-            const next = { ...prev };
-            next[rawUser] = (next[rawUser] || 0) + pointsToAdd;
-
-            // PARASITE LOGIC: Check if anyone is parasite-linked to this user
-            Object.entries(activeParasitesRef.current).forEach(([activator, data]) => {
-              const pData = data as { victim: string; expiresAt: number };
-              if (pData.victim.toLowerCase() === rawUser.toLowerCase() && Date.now() < pData.expiresAt) {
-                const parasiticPoints = Math.floor(pointsToAdd * 0.5);
-                if (parasiticPoints > 0) {
-                   next[activator] = (next[activator] || 0) + parasiticPoints;
-                }
-              }
-            });
-
-            return next;
-          });
-
-          // 4. Update round words
-          setFoundWords(prev => [...prev, { word: guess, user: rawUser, points: pointsToAdd }]);
-        }
-      }
+      processIncomingChatMessageRef.current(rawUser, message, tags);
     });
 
     client.connect()
@@ -1161,30 +1589,79 @@ export default function App() {
     }
   };
 
-  const showFeedback = (message: string, type: 'success' | 'error' | 'freeze' | 'hazard', soundKey?: keyof typeof AUDIO_PATHS) => {
-    setFeedback({ message, type });
-    
-    let soundUrl: string = "";
-    
-    if (soundKey && AUDIO_PATHS[soundKey]) {
-      soundUrl = AUDIO_PATHS[soundKey];
-    } else {
-      // Fallbacks if no specific soundKey provided
-      soundUrl = type === 'success' 
-        ? AUDIO_PATHS.WORD_CORRECT
-        : type === 'freeze'
-          ? AUDIO_PATHS.BONUS_FREEZE
-          : type === 'hazard'
-            ? AUDIO_PATHS.HAZARD_TRAP
-            : AUDIO_PATHS.WORD_CORRECT;
-    }
-    
-    if (soundUrl) {
-      playSound(soundUrl, 1);
-    }
+  // Helper Functions for Team Mode
+  const shuffleTeams = useCallback(() => {
+    if (teamLobbyPlayers.length < 2) return;
+    const shuffled = [...teamLobbyPlayers].sort(() => Math.random() - 0.5);
+    const mid = Math.ceil(shuffled.length / 2);
+    const blue = shuffled.slice(0, mid);
+    const red = shuffled.slice(mid);
+    setBlueTeam(blue);
+    setRedTeam(red);
+    showFeedback("ROZLOSOWANO SKŁADY DRUŻYN!", "success");
+  }, [teamLobbyPlayers]);
 
-    setTimeout(() => setFeedback({ message: "", type: null }), 2000);
-  };
+  const movePlayerToTeam = useCallback((username: string, targetTeam: 'blue' | 'red') => {
+    if (targetTeam === 'blue') {
+      setRedTeam(prev => prev.filter(p => p !== username));
+      setBlueTeam(prev => prev.includes(username) ? prev : [...prev, username]);
+    } else {
+      setBlueTeam(prev => prev.filter(p => p !== username));
+      setRedTeam(prev => prev.includes(username) ? prev : [...prev, username]);
+    }
+  }, []);
+
+  const removePlayerFromLobby = useCallback((username: string) => {
+    setTeamLobbyPlayers(prev => prev.filter(p => p !== username));
+    setBlueTeam(prev => prev.filter(p => p !== username));
+    setRedTeam(prev => prev.filter(p => p !== username));
+  }, []);
+
+  const addTestPlayer = useCallback(() => {
+    const testNames = ["GamerPro", "CyberNinja", "StreamFan", "PixelMaster", "ViperPL", "ShadowWolf", "NeonRider", "TurboHacker"];
+    const available = testNames.filter(n => !teamLobbyPlayers.includes(n));
+    const newName = available.length > 0 ? available[0] : `Gracz_${teamLobbyPlayers.length + 1}`;
+    setTeamLobbyPlayers(prev => [...prev, newName]);
+    if (blueTeam.length > 0 || redTeam.length > 0) {
+      if (blueTeam.length <= redTeam.length) {
+        setBlueTeam(prev => [...prev, newName]);
+      } else {
+        setRedTeam(prev => [...prev, newName]);
+      }
+    }
+  }, [teamLobbyPlayers, blueTeam.length, redTeam.length]);
+
+  const startTeamGame = useCallback(() => {
+    addDebugLog("Starting Team Session", { blue: blueTeam.length, red: redTeam.length });
+    setLevelSequence(generateLevelSequence());
+    setLevelIndex(0);
+    setFoundWords([]);
+    setSessionScores({});
+    awardProcessedRef.current = false;
+    sessionAwardedRef.current = false; 
+    lettersPoolRef.current = [];
+    setBlockedPlayer(null);
+    currentSessionIdRef.current = Math.random().toString(36).substring(7);
+    lastProcessedLevelRef.current = -1;
+    processedWordsInRoundRef.current.clear();
+    setTeamRound(1);
+    setRopePosition(50);
+    setTeamScores({ blue: 0, red: 0 });
+    setTeamPlayerStats({});
+    setCurrentTeamStreak({ team: null, count: 0 });
+    setMaxTeamStreak({ blue: 0, red: 0 });
+    setTeamMatchWinner(null);
+    setTeamWinReason(null);
+    setLastPullDelta(null);
+    teamMvpAwardedRef.current = false;
+    setHints({});
+    setFrozenWords({});
+    setActiveParasites({});
+    setTimeLeft(INITIAL_TIME);
+    setCountdownValue(5);
+    setGameState('countdown');
+  }, [blueTeam.length, redTeam.length, generateLevelSequence, addDebugLog]);
+
 
   const startGame = () => {
     addDebugLog("Starting New Session", {});
@@ -1219,7 +1696,8 @@ export default function App() {
       roundWins: getTop((a, b) => (b[1].roundWins || 0) - (a[1].roundWins || 0)),
       gameWins: getTop((a, b) => (b[1].gameWins || 0) - (a[1].gameWins || 0)),
       master: getTop((a, b) => (b[1].masterWordWins || 0) - (a[1].masterWordWins || 0)),
-      streak: getTop((a, b) => (b[1].maxStreak || 0) - (a[1].maxStreak || 0))
+      streak: getTop((a, b) => (b[1].maxStreak || 0) - (a[1].maxStreak || 0)),
+      teamMvp: getTop((a, b) => (b[1].teamMvp || 0) - (a[1].teamMvp || 0))
     };
   }, [globalStats]);
 
@@ -1232,6 +1710,7 @@ export default function App() {
     if (leaders.gameWins === userKey) badgesData.push({ icon: Trophy, color: "text-blue-400", label: "LIDER WYGRANYCH SESJI" });
     if (leaders.master === userKey) badgesData.push({ icon: Crown, color: "text-orange-400", label: "MISTRZ HASEŁ GŁÓWNYCH" });
     if (leaders.streak === userKey) badgesData.push({ icon: Flame, color: "text-purple-400", label: "LIDER REKORDOWEJ SERII" });
+    if (leaders.teamMvp === userKey) badgesData.push({ icon: Swords, color: "text-amber-400", label: "LIDER MVP DRUŻYNY" });
 
     if (badgesData.length === 0) return null;
 
@@ -1636,203 +2115,380 @@ export default function App() {
               exit={{ scale: 0.9, y: 20 }}
               className="bg-bg-card border border-white/10 rounded-[2.5rem] max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col shadow-2xl"
             >
-              <div className="p-8 border-b border-white/5 flex items-center justify-between bg-white/5">
-                <div>
-                  <h2 className="text-3xl font-black italic tracking-tighter text-white leading-none mb-1">INSTRUKCJA</h2>
-                  <p className="text-[10px] font-black tracking-widest text-text-secondary uppercase opacity-50">ZASADY I BONUSY SPECJALNE</p>
-                </div>
-                <button 
-                  onClick={() => setShowHelp(false)}
-                  className="p-3 bg-white/5 hover:bg-accent-red rounded-2xl transition-all group"
-                >
-                  <X className="w-6 h-6 text-white" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-8">
-                <div className="space-y-4">
-                  <h3 className="text-xs font-black tracking-[0.3em] text-cyan-400 uppercase flex items-center gap-2">
-                    <Sparkles className="w-4 h-4" /> BONUSY SPECJALNE
-                  </h3>
-                  <div className="grid gap-2">
-                     <div className="flex items-center gap-4 bg-cyan-400/5 border border-cyan-400/10 p-4 rounded-2xl">
-                        <div className="w-12 h-12 bg-cyan-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.3)] shrink-0">
-                          <ShieldCheck className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black text-cyan-400 uppercase">TARCZA OCHRONNA</h4>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Automatycznie <span className="text-white font-bold">BLOKUJE NASTĘPNY NEGATYWNY EFEKT</span> (sztorm, mrok, pułapka, paraliż) lub blokadę lidera. Można posiadać <span className="text-white font-bold">max 3 tarcze</span> jednocześnie.</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-4 bg-yellow-400/5 border border-yellow-400/10 p-4 rounded-2xl">
-                        <div className="w-12 h-12 bg-yellow-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(234,179,8,0.3)] shrink-0">
-                          <Trophy className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black text-yellow-500 uppercase">ZŁOTE SŁOWO</h4>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Daje bonus <span className="text-white font-bold">+10 PUNKTÓW</span> do podstawowej długości słowa.</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-4 bg-blue-400/5 border border-blue-400/10 p-4 rounded-2xl">
-                        <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(59,130,246,0.3)] shrink-0">
-                          <Timer className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black text-blue-400 uppercase">MROŹNE SŁOWO</h4>
-                          <p className="text-[11px] text-text-secondary leading-relaxed"><span className="text-white font-bold">ZAMRAŻA CZAS</span> na 10 sekund, pozwalając czatowi na spokojne odgadywanie haseł.</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-4 bg-green-400/5 border border-green-400/10 p-4 rounded-2xl">
-                        <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(34,197,94,0.3)] shrink-0">
-                          <Clock className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black text-green-500 uppercase">DODATKOWY CZAS</h4>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Natychmiast dodaje <span className="text-white font-bold">+15 SEKUND</span> do licznika rundy.</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-4 bg-cyan-400/5 border border-cyan-400/10 p-4 rounded-2xl">
-                        <div className="w-12 h-12 bg-cyan-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.3)] shrink-0">
-                          <Search className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black text-cyan-400 uppercase">SKANER LITER</h4>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Automatycznie odkrywa <span className="text-white font-bold">PIERWSZĄ LITERĘ</span> w połowie nieodkrytych słów.</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-4 bg-purple-400/5 border border-purple-400/10 p-4 rounded-2xl">
-                        <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.3)] shrink-0">
-                          <Bug className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                             <h4 className="text-sm font-black text-purple-400 uppercase">PASOŻYT</h4>
-                             <span className="text-[8px] font-black bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded border border-purple-500/20 uppercase tracking-tighter shrink-0">OD 30. POZIOMU</span>
-                           </div>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Przez 10 sekund otrzymujesz <span className="text-white font-bold">50% PUNKTÓW</span> za każde słowo odgadnięte przez wybranego losowo przeciwnika!</p>
-                        </div>
-                     </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4 pt-4 border-t border-white/5">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-black tracking-[0.3em] text-orange-500 uppercase flex items-center gap-2">
-                      <Skull className="w-4 h-4" /> ZAGROŻENIA RUNDY
-                    </h3>
-                    <span className="text-[9px] font-black bg-orange-500/10 text-orange-500 px-2 py-0.5 rounded border border-orange-500/20 uppercase tracking-tighter">OD 30. POZIOMU</span>
-                  </div>
-                  <div className="grid gap-2">
-                     <div className="flex items-center gap-4 bg-orange-400/5 border border-orange-400/10 p-4 rounded-2xl opacity-80">
-                        <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(249,115,22,0.3)] shrink-0">
-                          <Wind className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black text-orange-500 uppercase">SZTORM</h4>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Natychmiast <span className="text-white font-bold">PRZETASOWUJE</span> wszystkie litery na dolnej belce. Potrafi także zmienić fałszywą oraz ukrytą literkę!</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-4 bg-purple-400/5 border border-purple-400/10 p-4 rounded-2xl opacity-80">
-                        <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(147,51,234,0.3)] shrink-0">
-                          <Ghost className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black text-purple-400 uppercase">MROK</h4>
-                          <p className="text-[11px] text-text-secondary leading-relaxed"><span className="text-white font-bold">ROZMYWA TABLICĘ</span> na 7 sekund, czyniąc litery i hasła niemal niewidocznymi.</p>
-                        </div>
-                     </div>
-                      <div className="flex items-center gap-4 bg-red-400/5 border border-red-400/10 p-4 rounded-2xl opacity-80">
-                        <div className="w-12 h-12 bg-red-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(220,38,38,0.3)] shrink-0">
-                          <UserMinus className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                             <h4 className="text-sm font-black text-red-500 uppercase">BLOKADA LIDERA</h4>
-                             <span className="text-[8px] font-black bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded border border-red-500/20 uppercase tracking-tighter shrink-0">OD 25. POZIOMU</span>
-                           </div>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Jeśli inny gracz je trafi: <span className="text-white font-bold">BLOKUJE LIDERA</span> na 15s. Jeśli Lider je trafi: zyskuje <span className="text-green-400 font-bold">+30 PKT</span>.</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-4 bg-blue-400/5 border border-blue-400/10 p-4 rounded-2xl opacity-80">
-                        <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(37,99,235,0.3)] shrink-0">
-                          <Snowflake className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                             <h4 className="text-sm font-black text-blue-400 uppercase">SZRON</h4>
-                             <span className="text-[8px] font-black bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase tracking-tighter shrink-0">OD 35. POZIOMU</span>
-                           </div>
-                          <p className="text-[11px] text-text-secondary leading-relaxed"><span className="text-white font-bold">ZAMRAŻA</span> losowe nieodkryte hasło na 10 sekund. W tym czasie nie można go odgadnąć!</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-4 bg-neutral-400/5 border border-neutral-400/10 p-4 rounded-2xl opacity-80">
-                        <div className="w-12 h-12 bg-neutral-700 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(0,0,0,0.3)] shrink-0 border border-red-500/30">
-                          <Skull className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black text-neutral-400 uppercase">PUŁAPKA</h4>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Zabiera rundzie <span className="text-white font-bold">-10 SEKUND</span> cennego czasu.</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-4 bg-red-900/10 border border-red-500/20 p-4 rounded-2xl opacity-80">
-                        <div className="w-12 h-12 bg-red-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(220,38,38,0.3)] shrink-0">
-                          <Skull className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                             <h4 className="text-sm font-black text-red-500 uppercase">PARALIŻ</h4>
-                             <span className="text-[8px] font-black bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded border border-red-500/20 uppercase tracking-tighter shrink-0">OD 25. POZIOMU</span>
-                          </div>
-                          <p className="text-[11px] text-text-secondary leading-relaxed">Gracz, który odkryje to słowo, zostaje <span className="text-white font-bold">ZABLOKOWANY NA 15 SEKUND</span>. Tarcza chroni przed tym efektem.</p>
-                        </div>
-                     </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4 pt-4 border-t border-white/5">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-black tracking-[0.3em] text-white uppercase flex items-center gap-2">
-                      <HelpCircle className="w-4 h-4" /> BONUS NIESPODZIANKA
-                    </h3>
-                    <span className="text-[9px] font-black bg-white/10 text-white px-2 py-0.5 rounded border border-white/20 uppercase tracking-tighter">OD 15. POZIOMU</span>
-                  </div>
-                  <div className="bg-white/5 border border-white/10 p-5 rounded-2xl flex items-center gap-4">
-                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(255,255,255,0.2)] shrink-0 animate-bounce">
-                      <HelpCircle className="w-6 h-6 text-bg-main" />
-                    </div>
-                    <p className="text-[11px] text-text-secondary leading-relaxed">
-                      Nigdy nie wiesz co trafisz! Może to być <span className="text-green-400 font-bold">LEGENDARNY BONUS</span> lub <span className="text-accent-red font-bold">KRYTYCZNE ZAGROŻENIE</span>. Losuje jeden z dostępnych efektów w grze.
+              <div className="p-6 md:p-8 border-b border-white/5 bg-white/5 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl md:text-3xl font-black italic tracking-tighter text-white leading-none mb-1">
+                      {helpTab === 'teams' ? 'INSTRUKCJA GRY DRUŻYNOWEJ' : 'INSTRUKCJA GRY KLASYCZNEJ'}
+                    </h2>
+                    <p className="text-[10px] font-black tracking-widest text-text-secondary uppercase opacity-60">
+                      {helpTab === 'teams' ? 'BITWA CZATU • PRZECIĄGANIE LINY • ZASADY & MVP' : 'ZASADY I BONUSY SPECJALNE (TRYB FFA)'}
                     </p>
                   </div>
+                  <button 
+                    onClick={() => setShowHelp(false)}
+                    className="p-3 bg-white/5 hover:bg-accent-red rounded-2xl transition-all group cursor-pointer"
+                  >
+                    <X className="w-6 h-6 text-white" />
+                  </button>
                 </div>
 
-                <div className="space-y-4 pt-4 border-t border-white/5">
-                  <h3 className="text-xs font-black tracking-[0.3em] text-accent-red uppercase flex items-center gap-2">
-                     <ShieldCheck className="w-4 h-4" /> ELEMENTY ROZGRYWKI
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Trash2 className="w-4 h-4 text-accent-red" />
-                        <h4 className="text-[11px] font-black text-white uppercase italic">FAŁSZYWE LITERY</h4>
-                      </div>
-                      <p className="text-[10px] text-text-secondary leading-relaxed">Na belce z literami mogą znajdować się "zmyłki" - litery, które nie pasują do żadnego słowa w rundzie.</p>
-                    </div>
-                    <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Eye className="w-4 h-4 text-purple-400" />
-                        <h4 className="text-[11px] font-black text-white uppercase italic">UKRYTE LITERY</h4>
-                      </div>
-                      <p className="text-[10px] text-text-secondary leading-relaxed">Od 16. poziomu niektóre wymagane litery mogą być całkowicie ukryte pod znakiem zapytania (?).</p>
-                    </div>
-                  </div>
+                {/* Tab Switcher */}
+                <div className="grid grid-cols-2 gap-2 bg-black/40 p-1.5 rounded-2xl border border-white/10">
+                  <button
+                    onClick={() => setHelpTab('solo')}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      helpTab === 'solo'
+                        ? 'bg-accent-red text-white shadow-[0_0_15px_rgba(230,57,70,0.5)]'
+                        : 'text-text-secondary hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Trophy className="w-4 h-4" />
+                    <span>TRYB KLASYCZNY</span>
+                  </button>
+                  <button
+                    onClick={() => setHelpTab('teams')}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      helpTab === 'teams'
+                        ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 text-white shadow-[0_0_15px_rgba(59,130,246,0.5)]'
+                        : 'text-text-secondary hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Swords className="w-4 h-4 text-yellow-300" />
+                    <span>TRYB DRUŻYNOWY</span>
+                  </button>
                 </div>
               </div>
 
-              <div className="p-8 bg-white/5 border-t border-white/5">
+              <div className="flex-1 overflow-y-auto p-6 md:p-8 custom-scrollbar space-y-8">
+                {helpTab === 'teams' ? (
+                  <>
+                    {/* SECTION 1: TUG OF WAR MECHANIC */}
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-black tracking-[0.3em] text-cyan-400 uppercase flex items-center gap-2">
+                        <Swords className="w-4 h-4 text-yellow-400" /> PRZECIĄGANIE LINY (TUG OF WAR)
+                      </h3>
+
+                      {/* Visual Rope Gauge Representation */}
+                      <div className="bg-black/40 border border-white/10 p-5 rounded-2xl flex flex-col gap-3">
+                        <div className="flex justify-between text-[10px] font-black tracking-wider uppercase">
+                          <span className="text-blue-400 flex items-center gap-1">
+                            <ShieldCheck className="w-3.5 h-3.5" /> 0% BAZA NIEBIESKICH (K.O.)
+                          </span>
+                          <span className="text-text-secondary font-mono">50% ŚRODEK</span>
+                          <span className="text-red-400 flex items-center gap-1">
+                            100% BAZA CZERWONYCH (K.O.) <Flame className="w-3.5 h-3.5" />
+                          </span>
+                        </div>
+                        <div className="relative h-4 bg-white/5 rounded-full overflow-hidden border border-white/10 flex items-center">
+                          <div className="w-1/2 h-full bg-blue-600/40" />
+                          <div className="w-1/2 h-full bg-red-600/40" />
+                          <div className="absolute left-1/2 top-0 bottom-0 w-1.5 bg-yellow-400 -translate-x-1/2 shadow-[0_0_8px_#facc15]" />
+                        </div>
+                        <p className="text-[11px] text-text-secondary leading-relaxed">
+                          Lina na starcie meczu znajduje się na pozycji <span className="text-white font-bold">50%</span>. Gracze <span className="text-blue-400 font-bold">Drużyny Niebieskiej</span> przeciągają ją w lewo (do 0%), a gracze <span className="text-red-400 font-bold">Drużyny Czerwonej</span> w prawo (do 100%).
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="bg-blue-950/20 border border-blue-500/20 p-4 rounded-2xl flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg bg-blue-600/30 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                              <ShieldCheck className="w-4 h-4" />
+                            </div>
+                            <h4 className="text-xs font-black text-blue-400 uppercase">NATYCHMIASTOWE K.O.</h4>
+                          </div>
+                          <p className="text-[11px] text-text-secondary leading-relaxed">
+                            Gdy lina osiągnie <span className="text-white font-bold">0%</span> (dla Niebieskich) lub <span className="text-white font-bold">100%</span> (dla Czerwonych), mecz kończy się natychmiastowym zwycięstwem przez K.O.!
+                          </p>
+                        </div>
+                        <div className="bg-red-950/20 border border-red-500/20 p-4 rounded-2xl flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg bg-red-600/30 border border-red-500/30 flex items-center justify-center text-red-400">
+                              <Timer className="w-4 h-4" />
+                            </div>
+                            <h4 className="text-xs font-black text-red-400 uppercase">KONIEC CZASU (60S)</h4>
+                          </div>
+                          <p className="text-[11px] text-text-secondary leading-relaxed">
+                            Jeżeli upłynie czas rundy, wygrywa drużyna, która przeciągnęła linę na swoją połowę (&lt;50% Niebiescy, &gt;50% Czerwoni).
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SECTION 2: WORD LENGTH & COMBO STREAK */}
+                    <div className="space-y-4 pt-4 border-t border-white/5">
+                      <h3 className="text-xs font-black tracking-[0.3em] text-yellow-400 uppercase flex items-center gap-2">
+                        <Flame className="w-4 h-4 text-orange-400" /> SIŁA PRZECIĄGANIA I PŁONĄCE SERIE
+                      </h3>
+                      <div className="grid gap-2">
+                        <div className="flex items-center gap-4 bg-yellow-400/5 border border-yellow-400/10 p-4 rounded-2xl">
+                          <div className="w-12 h-12 bg-yellow-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(234,179,8,0.3)] shrink-0">
+                            <Trophy className="w-6 h-6 text-white" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-yellow-400 uppercase">DŁUGOŚĆ SŁOWA = SIŁA CIĄGNIĘCIA</h4>
+                            <p className="text-[11px] text-text-secondary leading-relaxed">
+                              Każda litera ma znaczenie! Słowo <span className="text-white font-bold">3-literowe przesuwa linę o 3 punkty siły</span>, a słowo <span className="text-white font-bold">6-literowe aż o 6 punktów siły</span>. Odgadywanie dłuższych słów pozwala na potężny zryw!
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 bg-orange-400/5 border border-orange-400/10 p-4 rounded-2xl">
+                          <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(249,115,22,0.3)] shrink-0">
+                            <Flame className="w-6 h-6 text-white" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-orange-400 uppercase">PŁONĄCA SERIA (COMBO STREAK 🔥)</h4>
+                            <p className="text-[11px] text-text-secondary leading-relaxed">
+                              Gdy ta sama drużyna odgadnie <span className="text-white font-bold">3 lub więcej haseł z rzędu</span> bez przerwania przez przeciwników, otrzymuje premię <span className="text-green-400 font-bold">+30% do siły przeciągania liny</span>!
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 bg-purple-400/5 border border-purple-400/10 p-4 rounded-2xl">
+                          <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(147,51,234,0.3)] shrink-0">
+                            <Crown className="w-6 h-6 text-yellow-300" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-purple-400 uppercase">HASŁO GŁÓWNE (MASTER WORD)</h4>
+                            <p className="text-[11px] text-text-secondary leading-relaxed">
+                              Najdłuższe hasło planszy daje <span className="text-white font-bold">potężne pchnięcie liny</span> dla drużyny, która je rozszyfruje, oraz prestiżowy punkt mistrzowski.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SECTION 3: MVP DRUŻYNY */}
+                    <div className="space-y-4 pt-4 border-t border-white/5">
+                      <h3 className="text-xs font-black tracking-[0.3em] text-cyan-400 uppercase flex items-center gap-2">
+                        <Swords className="w-4 h-4 text-cyan-400" /> SYSTEM MVP DRUŻYNY
+                      </h3>
+                      <div className="bg-gradient-to-r from-blue-950/30 via-purple-950/20 to-red-950/30 border border-white/10 p-5 rounded-2xl flex flex-col gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-yellow-400/20 text-yellow-300 rounded-xl border border-yellow-400/30">
+                            <Crown className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-white uppercase tracking-wider">
+                              +1 PUNKT MVP DLA LIDERÓW NIEBIESKICH I CZERWONYCH
+                            </h4>
+                            <p className="text-[10px] text-text-secondary uppercase tracking-widest">
+                              Przyznawane automatycznie po zakończeniu każdego meczu
+                            </p>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-text-secondary leading-relaxed">
+                          Po zakończeniu każdego meczu wyłaniany jest najlepszy gracz z <span className="text-blue-400 font-bold">Drużyny Niebieskiej</span> oraz z <span className="text-red-400 font-bold">Drużyny Czerwonej</span>. Oboje otrzymują <span className="text-white font-bold">+1 punkt MVP</span> do globalnego rankingu w zakładce <span className="text-yellow-400 font-bold">STATYSTYKI &gt; MVP DRUŻYNY</span>.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* SECTION 4: TWITCH CHAT COMMANDS */}
+                    <div className="space-y-4 pt-4 border-t border-white/5">
+                      <h3 className="text-xs font-black tracking-[0.3em] text-white uppercase flex items-center gap-2">
+                        <FaTwitch className="w-4 h-4 text-purple-400" /> KOMENDY NA CZACIE TWITCH
+                      </h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="bg-white/5 border border-white/10 p-3 rounded-xl flex items-center justify-between">
+                          <code className="text-xs font-mono font-black text-yellow-400 bg-black/40 px-2 py-1 rounded">!join / !dolacz</code>
+                          <span className="text-[10px] text-text-secondary uppercase font-bold">Zapisz się do meczu</span>
+                        </div>
+                        <div className="bg-white/5 border border-white/10 p-3 rounded-xl flex items-center justify-between">
+                          <code className="text-xs font-mono font-black text-red-400 bg-black/40 px-2 py-1 rounded">!leave</code>
+                          <span className="text-[10px] text-text-secondary uppercase font-bold">Opuść poczekalnię</span>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-black tracking-[0.3em] text-cyan-400 uppercase flex items-center gap-2">
+                        <Sparkles className="w-4 h-4" /> BONUSY SPECJALNE
+                      </h3>
+                      <div className="grid gap-2">
+                         <div className="flex items-center gap-4 bg-cyan-400/5 border border-cyan-400/10 p-4 rounded-2xl">
+                            <div className="w-12 h-12 bg-cyan-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.3)] shrink-0">
+                              <ShieldCheck className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-black text-cyan-400 uppercase">TARCZA OCHRONNA</h4>
+                              <p className="text-[11px] text-text-secondary leading-relaxed">Automatycznie <span className="text-white font-bold">BLOKUJE NASTĘPNY NEGATYWNY EFEKT</span> (sztorm, mrok, pułapka, paraliż) lub blokadę lidera. Można posiadać <span className="text-white font-bold">max 3 tarcze</span> jednocześnie.</p>
+                            </div>
+                         </div>
+                         <div className="flex items-center gap-4 bg-yellow-400/5 border border-yellow-400/10 p-4 rounded-2xl">
+                            <div className="w-12 h-12 bg-yellow-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(234,179,8,0.3)] shrink-0">
+                              <Trophy className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-black text-yellow-500 uppercase">ZŁOTE SŁOWO</h4>
+                              <p className="text-[11px] text-text-secondary leading-relaxed">Daje bonus <span className="text-white font-bold">+10 PUNKTÓW</span> do podstawowej długości słowa.</p>
+                            </div>
+                         </div>
+                         <div className="flex items-center gap-4 bg-blue-400/5 border border-blue-400/10 p-4 rounded-2xl">
+                            <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(59,130,246,0.3)] shrink-0">
+                              <Timer className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-black text-blue-400 uppercase">MROŹNE SŁOWO</h4>
+                              <p className="text-[11px] text-text-secondary leading-relaxed"><span className="text-white font-bold">ZAMRAŻA CZAS</span> na 10 sekund, pozwalając czatowi na spokojne odgadywanie haseł.</p>
+                            </div>
+                         </div>
+                         <div className="flex items-center gap-4 bg-green-400/5 border border-green-400/10 p-4 rounded-2xl">
+                            <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(34,197,94,0.3)] shrink-0">
+                              <Clock className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-black text-green-500 uppercase">DODATKOWY CZAS</h4>
+                              <p className="text-[11px] text-text-secondary leading-relaxed">Natychmiast dodaje <span className="text-white font-bold">+15 SEKUND</span> do licznika rundy.</p>
+                            </div>
+                         </div>
+                         <div className="flex items-center gap-4 bg-cyan-400/5 border border-cyan-400/10 p-4 rounded-2xl">
+                            <div className="w-12 h-12 bg-cyan-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.3)] shrink-0">
+                              <Search className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-black text-cyan-400 uppercase">SKANER LITER</h4>
+                              <p className="text-[11px] text-text-secondary leading-relaxed">Automatycznie odkrywa <span className="text-white font-bold">PIERWSZĄ LITERĘ</span> w połowie nieodkrytych słów.</p>
+                            </div>
+                         </div>
+                         <div className="flex items-center gap-4 bg-purple-400/5 border border-purple-400/10 p-4 rounded-2xl">
+                            <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.3)] shrink-0">
+                              <Bug className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                 <h4 className="text-sm font-black text-purple-400 uppercase">PASOŻYT</h4>
+                                 <span className="text-[8px] font-black bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded border border-purple-500/20 uppercase tracking-tighter shrink-0">OD 30. POZIOMU</span>
+                               </div>
+                              <p className="text-[11px] text-text-secondary leading-relaxed">Przez 10 sekund otrzymujesz <span className="text-white font-bold">50% PUNKTÓW</span> za każde słowo odgadnięte przez wybranego losowo przeciwnika!</p>
+                            </div>
+                         </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 pt-4 border-t border-white/5">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-black tracking-[0.3em] text-orange-500 uppercase flex items-center gap-2">
+                          <Skull className="w-4 h-4" /> ZAGROŻENIA RUNDY
+                        </h3>
+                        <span className="text-[9px] font-black bg-orange-500/10 text-orange-500 px-2 py-0.5 rounded border border-orange-500/20 uppercase tracking-tighter">OD 30. POZIOMU</span>
+                      </div>
+                      <div className="grid gap-2">
+                         <div className="flex items-center gap-4 bg-orange-400/5 border border-orange-400/10 p-4 rounded-2xl opacity-80">
+                            <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(249,115,22,0.3)] shrink-0">
+                              <Wind className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-black text-orange-500 uppercase">SZTORM</h4>
+                              <p className="text-[11px] text-text-secondary leading-relaxed">Natychmiast <span className="text-white font-bold">PRZETASOWUJE</span> wszystkie litery na dolnej belce. Potrafi także zmienić fałszywą oraz ukrytą literkę!</p>
+                            </div>
+                         </div>
+                         <div className="flex items-center gap-4 bg-purple-400/5 border border-purple-400/10 p-4 rounded-2xl opacity-80">
+                            <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(147,51,234,0.3)] shrink-0">
+                              <Ghost className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-black text-purple-400 uppercase">MROK</h4>
+                              <p className="text-[11px] text-text-secondary leading-relaxed"><span className="text-white font-bold">ROZMYWA TABLICĘ</span> na 7 sekund, czyniąc litery i hasła niemal niewidocznymi.</p>
+                            </div>
+                         </div>
+                          <div className="flex items-center gap-4 bg-red-400/5 border border-red-400/10 p-4 rounded-2xl opacity-80">
+                            <div className="w-12 h-12 bg-red-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(220,38,38,0.3)] shrink-0">
+                              <UserMinus className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                 <h4 className="text-sm font-black text-red-500 uppercase">BLOKADA LIDERA</h4>
+                                 <span className="text-[8px] font-black bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded border border-red-500/20 uppercase tracking-tighter shrink-0">OD 25. POZIOMU</span>
+                               </div>
+                              <p className="text-[11px] text-text-secondary leading-relaxed">Jeśli inny gracz je trafi: <span className="text-white font-bold">BLOKUJE LIDERA</span> na 15s. Jeśli Lider je trafi: zyskuje <span className="text-green-400 font-bold">+30 PKT</span>.</p>
+                            </div>
+                         </div>
+                         <div className="flex items-center gap-4 bg-blue-400/5 border border-blue-400/10 p-4 rounded-2xl opacity-80">
+                            <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(37,99,235,0.3)] shrink-0">
+                              <Snowflake className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                 <h4 className="text-sm font-black text-blue-400 uppercase">SZRON</h4>
+                                 <span className="text-[8px] font-black bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase tracking-tighter shrink-0">OD 35. POZIOMU</span>
+                               </div>
+                              <p className="text-[11px] text-text-secondary leading-relaxed"><span className="text-white font-bold">ZAMRAŻA</span> losowe nieodkryte hasło na 10 sekund. W tym czasie nie można go odgadnąć!</p>
+                            </div>
+                         </div>
+                         <div className="flex items-center gap-4 bg-neutral-400/5 border border-neutral-400/10 p-4 rounded-2xl opacity-80">
+                            <div className="w-12 h-12 bg-neutral-700 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(0,0,0,0.3)] shrink-0 border border-red-500/30">
+                              <Skull className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-black text-neutral-400 uppercase">PUŁAPKA</h4>
+                              <p className="text-[11px] text-text-secondary leading-relaxed">Zabiera rundzie <span className="text-white font-bold">-10 SEKUND</span> cennego czasu.</p>
+                            </div>
+                         </div>
+                         <div className="flex items-center gap-4 bg-red-900/10 border border-red-500/20 p-4 rounded-2xl opacity-80">
+                            <div className="w-12 h-12 bg-red-600 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(220,38,38,0.3)] shrink-0">
+                              <Skull className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                 <h4 className="text-sm font-black text-red-500 uppercase">PARALIŻ</h4>
+                                 <span className="text-[8px] font-black bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded border border-red-500/20 uppercase tracking-tighter shrink-0">OD 25. POZIOMU</span>
+                              </div>
+                              <p className="text-[11px] text-text-secondary leading-relaxed">Gracz, który odkryje to słowo, zostaje <span className="text-white font-bold">ZABLOKOWANY NA 15 SEKUND</span>. Tarcza chroni przed tym efektem.</p>
+                            </div>
+                         </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 pt-4 border-t border-white/5">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-black tracking-[0.3em] text-white uppercase flex items-center gap-2">
+                          <HelpCircle className="w-4 h-4" /> BONUS NIESPODZIANKA
+                        </h3>
+                        <span className="text-[9px] font-black bg-white/10 text-white px-2 py-0.5 rounded border border-white/20 uppercase tracking-tighter">OD 15. POZIOMU</span>
+                      </div>
+                      <div className="bg-white/5 border border-white/10 p-5 rounded-2xl flex items-center gap-4">
+                        <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(255,255,255,0.2)] shrink-0 animate-bounce">
+                          <HelpCircle className="w-6 h-6 text-bg-main" />
+                        </div>
+                        <p className="text-[11px] text-text-secondary leading-relaxed">
+                          Nigdy nie wiesz co trafisz! Może to być <span className="text-green-400 font-bold">LEGENDARNY BONUS</span> lub <span className="text-accent-red font-bold">KRYTYCZNE ZAGROŻENIE</span>. Losuje jeden z dostępnych efektów w grze.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 pt-4 border-t border-white/5">
+                      <h3 className="text-xs font-black tracking-[0.3em] text-accent-red uppercase flex items-center gap-2">
+                         <ShieldCheck className="w-4 h-4" /> ELEMENTY ROZGRYWKI
+                      </h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Trash2 className="w-4 h-4 text-accent-red" />
+                            <h4 className="text-[11px] font-black text-white uppercase italic">FAŁSZYWE LITERY</h4>
+                          </div>
+                          <p className="text-[10px] text-text-secondary leading-relaxed">Na belce z literami mogą znajdować się "zmyłki" - litery, które nie pasują do żadnego słowa w rundzie.</p>
+                        </div>
+                        <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Eye className="w-4 h-4 text-purple-400" />
+                            <h4 className="text-[11px] font-black text-white uppercase italic">UKRYTE LITERY</h4>
+                          </div>
+                          <p className="text-[10px] text-text-secondary leading-relaxed">Od 16. poziomu niektóre wymagane litery mogą być całkowicie ukryte pod znakiem zapytania (?).</p>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="p-6 md:p-8 bg-white/5 border-t border-white/5">
                  <button 
                    onClick={() => setShowHelp(false)}
-                   className="w-full bg-accent-red hover:bg-red-700 text-white py-4 rounded-xl font-black tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95"
+                   className="w-full bg-accent-red hover:bg-red-700 text-white py-4 rounded-xl font-black tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95 cursor-pointer"
                  >
                    ROZUMIEM, GRAMY!
                  </button>
@@ -1872,7 +2528,19 @@ export default function App() {
                         setGlobalStats(prev => ({
                           ...prev,
                           [userKey]: {
-                              ...(prev[userKey] || { displayName: 'DebugUser', points: 0, wins: 0, roundWins: 0, gameWins: 0, masterWordWins: 0, currentStreak: 0, maxStreak: 0 }),
+                              ...(prev[userKey] || { 
+                                displayName: 'DebugUser', 
+                                points: 0, 
+                                wins: 0, 
+                                roundWins: 0, 
+                                gameWins: 0, 
+                                masterWordWins: 0, 
+                                currentStreak: 0, 
+                                maxStreak: 0,
+                                maxLevelReached: 0,
+                                totalShields: 0,
+                                teamMvp: 0,
+                              }),
                               points: (prev[userKey]?.points || 0) + guess.length
                           }
                         }));
@@ -1905,23 +2573,67 @@ export default function App() {
         )}
       </AnimatePresence>
       
-      {/* Game Actions Top Right */}
+      {/* Compact Game Menu Top Right */}
       {(gameState === 'playing' || gameState === 'countdown' || gameState === 'roundSummary') && (
-        <div className="fixed top-6 right-6 z-50 flex items-center gap-3">
-          <button 
-            onClick={() => setShowSettings(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-bg-card border border-border-color rounded-xl hover:bg-purple-600 hover:text-white text-text-secondary transition-all shadow-xl group cursor-pointer"
+        <div className="fixed top-3 right-3 md:top-5 md:right-5 z-50">
+          <button
+            type="button"
+            onClick={() => setShowGameMenu(prev => !prev)}
+            aria-label="Otwórz menu gry"
+            aria-expanded={showGameMenu}
+            title="Menu gry"
+            className="w-10 h-10 flex items-center justify-center rounded-xl bg-bg-card/95 border border-border-color text-text-secondary hover:text-white hover:bg-neutral-800 shadow-xl backdrop-blur-sm transition-all active:scale-95"
           >
-            <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
-            <span className="text-[10px] font-black uppercase tracking-widest">OPCJE</span>
+            <MoreVertical className="w-5 h-5" />
           </button>
-          <button 
-            onClick={exitToLobby}
-            className="flex items-center gap-2 px-4 py-2 bg-bg-card border border-border-color rounded-xl hover:bg-accent-red hover:text-white text-text-secondary transition-all shadow-xl group cursor-pointer"
-          >
-            <X className="w-4 h-4 group-hover:rotate-90 transition-transform" />
-            <span className="text-[10px] font-black uppercase tracking-widest">WYJDŹ</span>
-          </button>
+
+          <AnimatePresence>
+            {showGameMenu && (
+              <motion.div
+                initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.96 }}
+                transition={{ duration: 0.14 }}
+                className="absolute right-0 top-12 w-52 p-1.5 rounded-xl bg-[#1c1c21] border border-white/10 shadow-2xl backdrop-blur-xl"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHelpTab(gameMode === 'teams' ? 'teams' : 'solo');
+                    setShowHelp(true);
+                    setShowGameMenu(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-xs font-bold text-text-secondary hover:text-white hover:bg-cyan-600/20 transition-colors"
+                >
+                  <Info className="w-4 h-4 text-cyan-400" />
+                  {gameMode === 'teams' ? 'Instrukcja drużyny' : 'Instrukcja gry'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSettings(true);
+                    setShowGameMenu(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-xs font-bold text-text-secondary hover:text-white hover:bg-purple-600/20 transition-colors"
+                >
+                  <Settings className="w-4 h-4 text-purple-400" />
+                  Opcje
+                </button>
+                <div className="my-1 border-t border-white/10" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGameMenu(false);
+                    exitToLobby();
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-xs font-bold text-red-400 hover:text-white hover:bg-red-600/80 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                  Wyjdź z gry
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
@@ -2011,16 +2723,279 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Developer Debug Panel */}
+      {isDevAuthorized && (
+        <div className="fixed bottom-4 left-4 z-[9999] flex flex-col items-start gap-2">
+          <button 
+            onClick={() => setShowDevPanel(!showDevPanel)}
+            className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded-full shadow-lg border border-white/10 transition-all active:scale-95 cursor-pointer"
+            title="Developer Tools"
+          >
+            <Settings className={`w-5 h-5 ${showDevPanel ? 'rotate-90' : ''}`} />
+          </button>
+
+          <AnimatePresence>
+            {showDevPanel && (
+              <motion.div 
+                initial={{ opacity: 0, y: 20, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 20, scale: 0.9 }}
+                className="bg-neutral-900 border border-white/20 p-4 rounded-2xl shadow-2xl w-64 space-y-3 backdrop-blur-xl"
+              >
+                <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
+                  <span className="text-[10px] font-black tracking-widest text-white/50 uppercase">DEV TOOLS</span>
+                  <span className="text-[9px] font-mono text-white/30 uppercase">v{appVersion}</span>
+                </div>
+
+                <div className="space-y-2">
+                  {/* Playing mode specific tools */}
+                  {gameState === 'playing' && (
+                    <>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[8px] font-bold text-white/40 uppercase">Master Word</span>
+                        <div className="bg-black/50 px-2 py-1 rounded text-xs font-mono text-yellow-500 flex justify-between items-center group overflow-hidden">
+                          <span className="whitespace-nowrap overflow-hidden text-ellipsis">{currentLevel.masterWord}</span>
+                          <span className="text-[8px] text-white/20 group-hover:text-white/40 shrink-0 ml-2">LEVEL {levelIndex + 1}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[8px] font-bold text-white/40 uppercase">Jump to Level</span>
+                        <div className="flex gap-2">
+                          <input 
+                            type="number" 
+                            min="1"
+                            placeholder="Lvl"
+                            className="w-full bg-black/50 px-2 py-1 rounded text-xs font-mono text-white border border-white/10"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const val = parseInt((e.target as HTMLInputElement).value);
+                                if (!isNaN(val)) {
+                                  const targetIdx = val - 1;
+                                  setLevelIndex(targetIdx);
+                                  setFoundWords([]);
+                                  (e.target as HTMLInputElement).value = '';
+                                  showFeedback(`Skoczono do poziomu ${val}!`, "success");
+                                }
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <button 
+                        onClick={() => {
+                          const unplayed = possibleAnswers.filter(w => !foundWords.some(fw => fw.word === w));
+                          if (unplayed.length === 0) {
+                            showFeedback("Brak słów do rozwiązania!", "hazard");
+                            return;
+                          }
+                          unplayed.forEach((word, idx) => {
+                            setTimeout(() => {
+                              processIncomingChatMessage(`Bot_${idx + 1}`, word, { color: '#22c55e' });
+                            }, idx * 100);
+                          });
+                          showFeedback(`Rozwiązano ${unplayed.length} haseł!`, "success");
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 bg-green-600/20 hover:bg-green-600/30 text-green-400 py-1.5 rounded-xl text-[10px] font-bold uppercase transition-colors"
+                      >
+                        <Check className="w-3 h-3" /> Rozwiąż Cały Poziom
+                      </button>
+
+                      {/* Custom Word / Team Guess */}
+                      <div className="flex flex-col gap-1 pt-1 border-t border-white/5">
+                        <span className="text-[8px] font-bold text-white/40 uppercase">Wymuś odgadnięcie</span>
+                        <input 
+                          type="text"
+                          placeholder="Wpisz własne słowo..."
+                          value={devCustomGuessWord}
+                          onChange={(e) => setDevCustomGuessWord(e.target.value.toUpperCase())}
+                          className="w-full bg-black/50 px-2 py-1 rounded text-xs font-mono text-white border border-white/10 placeholder:text-white/20 uppercase"
+                        />
+                      </div>
+
+                      {/* Team Specific Guesses */}
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button 
+                          onClick={() => {
+                            const custom = devCustomGuessWord.trim();
+                            const unplayed = possibleAnswers.filter(w => !foundWords.some(fw => fw.word === w));
+                            const targetWord = custom || (unplayed.length > 0 ? unplayed[0] : null);
+
+                            if (!targetWord) {
+                              showFeedback("Brak wolnych haseł w tej rundzie!", "hazard");
+                              return;
+                            }
+
+                            let user = blueTeam[Math.floor(Math.random() * blueTeam.length)] || 'Niebieski_Bot';
+                            if (!blueTeam.some(p => p.toLowerCase() === user.toLowerCase())) {
+                              setBlueTeam(prev => [...prev, user]);
+                            }
+                            processIncomingChatMessage(user, targetWord, { color: '#3b82f6' });
+                            if (custom) setDevCustomGuessWord("");
+                          }}
+                          className="flex items-center justify-center gap-1.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/40 py-2 rounded-xl text-[10px] font-black uppercase transition-all shadow-sm active:scale-95"
+                        >
+                          <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                          🔵 Niebiescy
+                        </button>
+                        <button 
+                          onClick={() => {
+                            const custom = devCustomGuessWord.trim();
+                            const unplayed = possibleAnswers.filter(w => !foundWords.some(fw => fw.word === w));
+                            const targetWord = custom || (unplayed.length > 0 ? unplayed[0] : null);
+
+                            if (!targetWord) {
+                              showFeedback("Brak wolnych haseł w tej rundzie!", "hazard");
+                              return;
+                            }
+
+                            let user = redTeam[Math.floor(Math.random() * redTeam.length)] || 'Czerwony_Bot';
+                            if (!redTeam.some(p => p.toLowerCase() === user.toLowerCase())) {
+                              setRedTeam(prev => [...prev, user]);
+                            }
+                            processIncomingChatMessage(user, targetWord, { color: '#ef4444' });
+                            if (custom) setDevCustomGuessWord("");
+                          }}
+                          className="flex items-center justify-center gap-1.5 bg-red-600/30 hover:bg-red-600/50 text-red-300 border border-red-500/40 py-2 rounded-xl text-[10px] font-black uppercase transition-all shadow-sm active:scale-95"
+                        >
+                          <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+                          🔴 Czerwoni
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <button 
+                          onClick={() => {
+                            const custom = devCustomGuessWord.trim();
+                            const unplayed = possibleAnswers.filter(w => !foundWords.some(fw => fw.word === w));
+                            const targetWord = custom || (unplayed.length > 0 ? unplayed[0] : null);
+                            if (!targetWord) {
+                              showFeedback("Brak wolnych haseł!", "hazard");
+                              return;
+                            }
+                            processIncomingChatMessage('DevTester', targetWord, { color: '#eab308' });
+                            if (custom) setDevCustomGuessWord("");
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 py-1.5 rounded-xl text-[10px] font-bold uppercase transition-colors"
+                        >
+                          <Sparkles className="w-3 h-3" /> Solo Guess
+                        </button>
+
+                        {gameMode === 'teams' && (
+                          <button 
+                            onClick={() => {
+                              setRopePosition(50);
+                              setCurrentTeamStreak({ team: null, count: 0 });
+                              showFeedback("Lina wyzerowana do 50%!", "success");
+                            }}
+                            className="w-full flex items-center justify-center gap-1.5 bg-white/10 hover:bg-white/20 text-white/80 py-1.5 rounded-xl text-[10px] font-bold uppercase transition-colors"
+                          >
+                            ⚖️ Lina 50%
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Lobby specific dev buttons */}
+                  {gameMode === 'teams' && gameState === 'lobby' && (
+                    <button 
+                      onClick={addTestPlayer}
+                      className="w-full flex items-center justify-center gap-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 py-1.5 rounded-xl text-[10px] font-bold uppercase transition-colors"
+                    >
+                      <UserPlus className="w-3 h-3" /> + Dodaj Gracza Testowego
+                    </button>
+                  )}
+
+                  {/* Team specific dev controls when playing */}
+                  {gameMode === 'teams' && gameState === 'playing' && (
+                    <div className="pt-1 border-t border-white/5 space-y-1.5">
+                      <div className="flex justify-between items-center text-[8px] font-mono text-white/40">
+                        <span>Runda: {teamRound}</span>
+                        <span>Lina: {ropePosition.toFixed(1)}%</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button 
+                          onClick={() => {
+                            setRopePosition(94);
+                            showFeedback("Ustawiono 94% (blisko K.O. Niebieskich)!", "success");
+                          }}
+                          className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 py-1 rounded text-[9px] font-bold transition-colors"
+                        >
+                          ⚡ Ustaw 94%
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setRopePosition(6);
+                            showFeedback("Ustawiono 6% (blisko K.O. Czerwonych)!", "success");
+                          }}
+                          className="bg-red-500/20 hover:bg-red-500/30 text-red-300 py-1 rounded text-[9px] font-bold transition-colors"
+                        >
+                          ⚡ Ustaw 6%
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button 
+                          onClick={() => {
+                            setRopePosition(100);
+                            setTeamMatchWinner('blue');
+                            setTeamWinReason('ko');
+                            processRoundResults(true);
+                            showFeedback("🏆 Symulacja: Wygrana Niebieskich (K.O.) + MVP!", "success");
+                          }}
+                          className="bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 py-1 rounded text-[9px] font-bold transition-colors"
+                        >
+                          🏆 Win Niebiescy (+MVP)
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setRopePosition(0);
+                            setTeamMatchWinner('red');
+                            setTeamWinReason('ko');
+                            processRoundResults(true);
+                            showFeedback("🏆 Symulacja: Wygrana Czerwonych (K.O.) + MVP!", "success");
+                          }}
+                          className="bg-red-600/30 hover:bg-red-600/50 text-red-300 py-1 rounded text-[9px] font-bold transition-colors"
+                        >
+                          🏆 Win Czerwoni (+MVP)
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <button 
+                    onClick={() => {
+                      clearStats();
+                      exitToLobby();
+                      window.location.reload();
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 bg-red-600/20 hover:bg-red-600/30 text-accent-red py-2 rounded-xl text-[10px] font-bold uppercase transition-colors"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Hard Reset
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </>
   );
 
   // --- LOBBY SCREEN ---
   if (gameState === 'lobby') {
     return (
-      <div className="min-h-screen bg-bg-main text-text-primary font-sans flex flex-col items-center p-6 pt-16 pb-16 relative overflow-y-auto custom-scrollbar">
+      <div className="min-h-screen bg-bg-main text-text-primary font-sans flex flex-col items-center p-6 pt-12 pb-16 relative overflow-y-auto custom-scrollbar">
         {/* Animated background accents */}
         <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-accent-red/5 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl animate-pulse delay-700" />
+        {gameMode === 'teams' && (
+          <>
+            <div className="absolute top-1/3 left-10 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute top-1/3 right-10 w-80 h-80 bg-red-600/10 rounded-full blur-3xl pointer-events-none" />
+          </>
+        )}
         
         {/* Settings Button Lobby */}
         <div className="absolute top-8 right-8 z-20">
@@ -2035,7 +3010,7 @@ export default function App() {
         <motion.div 
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          className="z-10 flex flex-col items-center max-w-md w-full text-center"
+          className={`z-10 flex flex-col items-center w-full text-center transition-all duration-300 ${gameMode === 'teams' ? 'max-w-4xl' : 'max-w-md'}`}
         >
           {/* Logo Section */}
           <div className="mb-2 relative group">
@@ -2044,95 +3019,423 @@ export default function App() {
               animate={{ scale: 1, opacity: 1 }}
               src={logoImg} 
               alt="Logo" 
-              className="w-64 h-64 object-contain drop-shadow-[0_0_25px_rgba(230,57,70,0.4)] transition-all duration-500 group-hover:scale-105"
+              className="w-48 h-48 md:w-56 md:h-56 object-contain drop-shadow-[0_0_25px_rgba(230,57,70,0.4)] transition-all duration-500 group-hover:scale-105"
               onError={(e) => {
                 e.currentTarget.style.display = 'none';
               }}
             />
           </div>
 
-          <h1 className="text-4xl font-black tracking-tighter mb-2 italic">
+          <h1 className="text-4xl font-black tracking-tighter mb-1 italic">
             TWITCH<span className="text-accent-red">SŁÓWKA</span>
           </h1>
-          <p className="text-text-secondary font-medium tracking-widest text-[10px] uppercase mb-12 opacity-50">
+          <p className="text-text-secondary font-medium tracking-widest text-[10px] uppercase mb-6 opacity-60">
             INTERAKTYWNA WYKREŚLANKA DLA TWOJEGO CZATU
           </p>
 
-          <div className="w-full bg-bg-card border border-border-color rounded-2xl p-6 shadow-2xl">
-            <div className="flex flex-col gap-4">
-              <div className="text-left">
-                <label className="text-[10px] font-black tracking-widest text-text-secondary uppercase ml-1 mb-2 block">
-                  TWÓJ KANAŁ TWITCH
-                </label>
-                <div className="flex gap-2">
-                  <div className="flex-1 bg-bg-main border border-border-color rounded-xl px-4 py-3 flex items-center gap-3 focus-within:border-purple-500/50 transition-all">
-                    <FaTwitch className="w-4 h-4 text-text-secondary" />
-                    <input 
-                      type="text" 
-                      placeholder="NAZWA KANAŁU..."
-                      value={inputValue}
-                      onChange={(e) => setInputValue(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleConnect()}
-                      className="bg-transparent w-full outline-none text-sm font-bold placeholder:text-neutral-700 uppercase"
-                    />
-                  </div>
-                  <button 
-                    onClick={handleConnect}
-                    className="bg-purple-600 hover:bg-purple-700 text-white font-black px-4 rounded-xl text-[11px] tracking-widest uppercase transition-all shadow-lg active:scale-95"
+          {/* Mode Selector Tabs */}
+          <div className="w-full grid grid-cols-2 gap-2 p-1.5 bg-black/50 border border-white/10 rounded-2xl mb-6 shadow-2xl backdrop-blur-md">
+            <button
+              onClick={() => {
+                setGameMode('solo');
+                localStorage.setItem('gameMode', 'solo');
+              }}
+              className={`py-3.5 px-4 rounded-xl font-black text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2.5 ${
+                gameMode === 'solo'
+                  ? 'bg-accent-red text-white shadow-[0_0_20px_rgba(230,57,70,0.5)] scale-[1.02]'
+                  : 'text-text-secondary hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Trophy className="w-4 h-4" />
+              KLASYCZNY (FFA)
+            </button>
+            <button
+              onClick={() => {
+                setGameMode('teams');
+                localStorage.setItem('gameMode', 'teams');
+              }}
+              className={`py-3.5 px-4 rounded-xl font-black text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2.5 ${
+                gameMode === 'teams'
+                  ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 text-white shadow-[0_0_25px_rgba(59,130,246,0.5)] scale-[1.02]'
+                  : 'text-text-secondary hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Swords className="w-4 h-4 text-yellow-300" />
+              DRUŻYNÓWKA (PRZECIĄGANIE LINY)
+            </button>
+          </div>
+
+          {/* Twitch Connection Card (Shared) */}
+          <div className="w-full bg-bg-card border border-border-color rounded-2xl p-6 shadow-2xl mb-6 text-left">
+            <label className="text-[10px] font-black tracking-widest text-text-secondary uppercase ml-1 mb-2 block">
+              TWÓJ KANAŁ TWITCH
+            </label>
+            <div className="flex gap-2">
+              <div className="flex-1 bg-bg-main border border-border-color rounded-xl px-4 py-3 flex items-center gap-3 focus-within:border-purple-500/50 transition-all">
+                <FaTwitch className="w-4 h-4 text-text-secondary" />
+                <input 
+                  type="text" 
+                  placeholder="NAZWA KANAŁU..."
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleConnect()}
+                  className="bg-transparent w-full outline-none text-sm font-bold placeholder:text-neutral-700 uppercase"
+                />
+              </div>
+              <button 
+                onClick={handleConnect}
+                className="bg-purple-600 hover:bg-purple-700 text-white font-black px-5 rounded-xl text-[11px] tracking-widest uppercase transition-all shadow-lg active:scale-95"
+              >
+                POŁĄCZ
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-xl bg-bg-main border border-border-color mt-3">
+              <span className="text-[10px] font-black tracking-widest text-text-secondary uppercase">STATUS BOT'A:</span>
+              <span className={`text-[10px] font-black tracking-widest uppercase flex items-center gap-1.5 ${isConnected ? 'text-green-500' : 'text-accent-red'}`}>
+                <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                {status}
+              </span>
+            </div>
+          </div>
+
+          {/* SOLO MODE CONTENT */}
+          {gameMode === 'solo' && (
+            <div className="w-full bg-bg-card border border-border-color rounded-2xl p-6 shadow-2xl">
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    disabled={!isConnected}
+                    onClick={startGame}
+                    className={`w-full py-4 rounded-xl font-black text-xs tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95
+                      ${isConnected 
+                        ? 'bg-accent-red hover:bg-red-700 text-white shadow-[0_0_20px_rgba(230,57,70,0.4)]' 
+                        : 'bg-neutral-800 text-neutral-600 cursor-not-allowed opacity-50'
+                      }
+                    `}
                   >
-                    POŁĄCZ
+                    START GRY
                   </button>
+                  <button
+                    onClick={() => setGameState('stats')}
+                    className="w-full py-4 rounded-xl font-black text-xs tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95 bg-neutral-800 text-white hover:bg-neutral-700 border border-neutral-700"
+                  >
+                    STATYSTYKI
+                  </button>
+                </div>
+                
+                <button
+                  onClick={() => {
+                    setHelpTab('solo');
+                    setShowHelp(true);
+                  }}
+                  className="w-full mt-2 py-3 rounded-xl font-black text-[10px] tracking-[0.3em] uppercase transition-all bg-white/5 text-text-secondary hover:bg-white/10 border border-white/5 flex items-center justify-center gap-2 group cursor-pointer"
+                >
+                  <Info className="w-3.5 h-3.5 group-hover:text-cyan-400 transition-colors" />
+                  INSTRUKCJA GRY
+                </button>
+
+                <button
+                  onClick={() => setShowChangelog(true)}
+                  className="w-full py-3 rounded-xl font-black text-[10px] tracking-[0.3em] uppercase transition-all bg-white/5 text-text-secondary hover:bg-white/10 border border-white/5 flex items-center justify-center gap-2 group"
+                >
+                  <Sparkles className="w-3.5 h-3.5 group-hover:text-yellow-400 transition-colors" />
+                  CO NOWEGO (PATCH NOTES)
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TEAM MODE CONTENT (DRUŻYNÓWKA) */}
+          {gameMode === 'teams' && (
+            <div className="w-full flex flex-col gap-6">
+              {/* Call to action & Recruitment Instructions */}
+              <div className="w-full bg-gradient-to-r from-blue-950/40 via-purple-950/30 to-red-950/40 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-md relative overflow-hidden text-center">
+                <div className="flex flex-col items-center">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="p-2 bg-blue-500/20 text-blue-400 rounded-xl border border-blue-500/30">
+                      <ShieldCheck className="w-5 h-5" />
+                    </span>
+                    <span className="font-black italic text-xl md:text-2xl tracking-tighter text-white uppercase">
+                      POCZEKALNIA DO WALKI DRUŻYNOWEJ
+                    </span>
+                    <span className="p-2 bg-red-500/20 text-red-400 rounded-xl border border-red-500/30">
+                      <Flame className="w-5 h-5" />
+                    </span>
+                  </div>
+                  <p className="text-yellow-400 font-black tracking-widest text-xs uppercase mb-1">
+                    WPISZ NA CZACIE: <span className="bg-yellow-400/20 px-2 py-0.5 rounded text-white border border-yellow-400/40">!join</span> LUB <span className="bg-yellow-400/20 px-2 py-0.5 rounded text-white border border-yellow-400/40">!dolacz</span>
+                  </p>
+                  <p className="text-white/40 text-[10px] font-bold uppercase tracking-wider">
+                    Aby zrezygnować wpisz <span className="text-white/70">!leave</span>. Po starcie meczu zapisy zostają zablokowane!
+                  </p>
+                </div>
+
+                {/* Streamer Quick Management Toolbar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mt-5 pt-4 border-t border-white/10">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-white/70">
+                      ZAPISANYCH:
+                    </span>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-black border ${
+                      teamLobbyPlayers.length >= 2 
+                        ? 'bg-green-500/20 text-green-400 border-green-500/30' 
+                        : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                    }`}>
+                      {teamLobbyPlayers.length} GRACZY
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {isDevAuthorized && (
+                      <button
+                        onClick={addTestPlayer}
+                        className="px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-xl text-[10px] font-black text-cyan-400 hover:text-cyan-300 transition-all flex items-center gap-1.5 active:scale-95 shadow-[0_0_10px_rgba(6,182,212,0.15)]"
+                        title="Opcja deweloperska: dodaje gracza testowego do poczekalni"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        + DODAJ GRACZA TESTOWEGO
+                      </button>
+                    )}
+                    {teamLobbyPlayers.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setTeamLobbyPlayers([]);
+                          setBlueTeam([]);
+                          setRedTeam([]);
+                        }}
+                        className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl text-[10px] font-black text-red-400 hover:text-red-300 transition-all active:scale-95"
+                      >
+                        WYCZYŚĆ
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-xl bg-bg-main border border-border-color mt-2">
-                <span className="text-[10px] font-black tracking-widest text-text-secondary uppercase">STATUS BOT'A:</span>
-                <span className={`text-[10px] font-black tracking-widest uppercase ${isConnected ? 'text-green-500' : 'text-accent-red'}`}>
-                  {status}
-                </span>
-              </div>
+              {/* Waiting Pool or Divided Teams View */}
+              {blueTeam.length === 0 && redTeam.length === 0 ? (
+                /* WAITING POOL (Not yet shuffled) */
+                <div className="w-full bg-bg-card border border-border-color rounded-2xl p-6 shadow-2xl flex flex-col items-center">
+                  <span className="text-[10px] font-black tracking-widest text-text-secondary uppercase mb-4">
+                    LISTA GRACZY W POCZEKALNI:
+                  </span>
 
-              <div className="flex justify-center mt-2">
-                <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: {appVersion}</span>
-              </div>
+                  {teamLobbyPlayers.length === 0 ? (
+                    <div className="py-12 flex flex-col items-center justify-center text-center text-white/30 space-y-2">
+                      <Users className="w-10 h-10 stroke-1" />
+                      <p className="text-xs font-bold uppercase tracking-wider">
+                        Czekam na graczy z czatu...
+                      </p>
+                      <p className="text-[10px] text-white/20">
+                        {isDevAuthorized 
+                          ? "Wpisz !join na czacie lub kliknij przycisk „+ Dodaj gracza testowego” powyżej." 
+                          : "Wpisz !join na czacie Twitch, aby dołączyć do gry drużynowej."}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap justify-center gap-2 mb-6 max-h-48 overflow-y-auto p-2 w-full custom-scrollbar">
+                      {teamLobbyPlayers.map((player) => (
+                        <div 
+                          key={player}
+                          className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-xl flex items-center gap-2 group hover:border-white/20"
+                        >
+                          <span className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_#4ade80]" />
+                          <span className="text-xs font-bold text-white">{player}</span>
+                          <button 
+                            onClick={() => removePlayerFromLobby(player)}
+                            className="opacity-40 group-hover:opacity-100 hover:text-red-400 transition-opacity ml-1"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-              <div className="grid grid-cols-2 gap-3 mt-4">
+                  <button
+                    disabled={teamLobbyPlayers.length < 2}
+                    onClick={shuffleTeams}
+                    className={`w-full py-4 rounded-xl font-black text-xs tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2
+                      ${teamLobbyPlayers.length >= 2 
+                        ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white shadow-[0_0_20px_rgba(147,51,234,0.4)]' 
+                        : 'bg-neutral-800 text-neutral-600 cursor-not-allowed opacity-50'
+                      }
+                    `}
+                  >
+                    <Shuffle className="w-4 h-4" />
+                    ROZLOSUJ DRUŻYNY (50 / 50)
+                  </button>
+                  {teamLobbyPlayers.length < 2 && (
+                    <span className="text-[9px] font-bold text-yellow-500/80 uppercase tracking-widest mt-2">
+                      Wymagane minimum 2 osoby w poczekalni, aby rozlosować składy.
+                    </span>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setHelpTab('teams');
+                      setShowHelp(true);
+                    }}
+                    className="w-full mt-3 py-3 rounded-xl font-black text-[10px] tracking-[0.25em] uppercase transition-all bg-white/5 text-text-secondary hover:bg-white/10 hover:text-white border border-white/5 flex items-center justify-center gap-2 group cursor-pointer"
+                  >
+                    <Info className="w-3.5 h-3.5 text-blue-400 group-hover:text-cyan-300 transition-colors" />
+                    <span>ZASADY & INSTRUKCJA GRY DRUŻYNOWEJ</span>
+                  </button>
+                </div>
+              ) : (
+                /* TEAMS DIVIDED VIEW (Roster cards) */
+                <div className="w-full flex flex-col gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Blue Team Column */}
+                    <div className="bg-blue-950/20 border-2 border-blue-500/40 rounded-2xl p-5 shadow-2xl flex flex-col backdrop-blur-md">
+                      <div className="flex items-center justify-between pb-3 mb-3 border-b border-blue-500/30">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-[0_0_10px_rgba(59,130,246,0.5)]">
+                            <ShieldCheck className="w-4 h-4" />
+                          </div>
+                          <span className="font-black text-blue-400 tracking-wider text-sm uppercase">
+                            DRUŻYNA NIEBIESKA
+                          </span>
+                        </div>
+                        <span className="text-xs font-mono font-black text-blue-300 bg-blue-500/20 px-2 py-0.5 rounded-full border border-blue-500/30">
+                          {blueTeam.length} GRACZY
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5 min-h-[160px] max-h-[260px] overflow-y-auto custom-scrollbar pr-1">
+                        {blueTeam.map((player) => (
+                          <div 
+                            key={player}
+                            className="flex items-center justify-between bg-blue-900/30 hover:bg-blue-900/50 border border-blue-500/20 px-3 py-2 rounded-xl transition-colors group"
+                          >
+                            <span className="text-xs font-bold text-white truncate max-w-[150px]">{player}</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => movePlayerToTeam(player, 'red')}
+                                title="Przenieś do Czerwonych"
+                                className="px-2 py-1 bg-white/5 hover:bg-red-600/40 text-blue-300 hover:text-white rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1"
+                              >
+                                <span>Do Czerwonych</span>
+                                <ArrowRight className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => removePlayerFromLobby(player)}
+                                title="Usuń"
+                                className="p-1 text-white/40 hover:text-red-400 transition-colors"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Red Team Column */}
+                    <div className="bg-red-950/20 border-2 border-red-500/40 rounded-2xl p-5 shadow-2xl flex flex-col backdrop-blur-md">
+                      <div className="flex items-center justify-between pb-3 mb-3 border-b border-red-500/30">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-red-600 flex items-center justify-center text-white shadow-[0_0_10px_rgba(239,68,68,0.5)]">
+                            <Flame className="w-4 h-4" />
+                          </div>
+                          <span className="font-black text-red-400 tracking-wider text-sm uppercase">
+                            DRUŻYNA CZERWONA
+                          </span>
+                        </div>
+                        <span className="text-xs font-mono font-black text-red-300 bg-red-500/20 px-2 py-0.5 rounded-full border border-red-500/30">
+                          {redTeam.length} GRACZY
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5 min-h-[160px] max-h-[260px] overflow-y-auto custom-scrollbar pr-1">
+                        {redTeam.map((player) => (
+                          <div 
+                            key={player}
+                            className="flex items-center justify-between bg-red-900/30 hover:bg-red-900/50 border border-red-500/20 px-3 py-2 rounded-xl transition-colors group"
+                          >
+                            <span className="text-xs font-bold text-white truncate max-w-[150px]">{player}</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => movePlayerToTeam(player, 'blue')}
+                                title="Przenieś do Niebieskich"
+                                className="px-2 py-1 bg-white/5 hover:bg-blue-600/40 text-red-300 hover:text-white rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1"
+                              >
+                                <ArrowLeft className="w-3 h-3" />
+                                <span>Do Niebieskich</span>
+                              </button>
+                              <button
+                                onClick={() => removePlayerFromLobby(player)}
+                                title="Usuń"
+                                className="p-1 text-white/40 hover:text-red-400 transition-colors"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions Row */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <button
+                      onClick={shuffleTeams}
+                      className="py-3 px-4 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all border border-white/10 flex items-center justify-center gap-2"
+                    >
+                      <Shuffle className="w-4 h-4 text-yellow-400" />
+                      PRZETASUJ PONOWNIE
+                    </button>
+                    <button
+                      disabled={blueTeam.length === 0 || redTeam.length === 0}
+                      onClick={startTeamGame}
+                      className={`md:col-span-2 py-4 rounded-xl font-black text-sm tracking-[0.2em] uppercase transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-2
+                        ${blueTeam.length > 0 && redTeam.length > 0
+                          ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white shadow-[0_0_25px_rgba(230,57,70,0.5)]'
+                          : 'bg-neutral-800 text-neutral-600 cursor-not-allowed opacity-50'
+                        }
+                      `}
+                    >
+                      <Swords className="w-5 h-5 text-yellow-300" />
+                      START MECZU DRUŻYNOWEGO
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Team Mode Bottom Navigation Bar */}
+              <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
                 <button
-                  disabled={!isConnected}
-                  onClick={startGame}
-                  className={`w-full py-4 rounded-xl font-black text-xs tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95
-                    ${isConnected 
-                      ? 'bg-accent-red hover:bg-red-700 text-white' 
-                      : 'bg-neutral-800 text-neutral-600 cursor-not-allowed opacity-50'
-                    }
-                  `}
+                  onClick={() => {
+                    setHelpTab('teams');
+                    setShowHelp(true);
+                  }}
+                  className="w-full py-4 px-4 rounded-xl font-black text-xs tracking-wider uppercase transition-all bg-gradient-to-r from-blue-600/20 via-purple-600/20 to-red-600/20 hover:from-blue-600/35 hover:to-red-600/35 border border-purple-500/40 text-white flex items-center justify-center gap-2 group shadow-xl active:scale-95 cursor-pointer"
                 >
-                  START
+                  <Swords className="w-4 h-4 text-yellow-300 group-hover:scale-110 transition-transform" />
+                  <span>INSTRUKCJA GRY DRUŻYNOWEJ</span>
                 </button>
                 <button
                   onClick={() => setGameState('stats')}
-                  className="w-full py-4 rounded-xl font-black text-xs tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95 bg-neutral-800 text-white hover:bg-neutral-700 border border-neutral-700"
+                  className="w-full py-4 px-4 rounded-xl font-black text-xs tracking-wider uppercase transition-all bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white flex items-center justify-center gap-2 shadow-xl active:scale-95 cursor-pointer"
                 >
-                  STATYSTYKI
+                  <Trophy className="w-4 h-4 text-accent-red" />
+                  <span>STATYSTYKI</span>
+                </button>
+                <button
+                  onClick={() => setShowChangelog(true)}
+                  className="w-full py-4 px-4 rounded-xl font-black text-xs tracking-wider uppercase transition-all bg-white/5 hover:bg-white/10 border border-white/10 text-text-secondary hover:text-white flex items-center justify-center gap-2 shadow-xl active:scale-95 cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4 text-yellow-400" />
+                  <span>CO NOWEGO (PATCH NOTES)</span>
                 </button>
               </div>
-              
-              <button
-                onClick={() => setShowHelp(true)}
-                className="w-full mt-2 py-3 rounded-xl font-black text-[10px] tracking-[0.3em] uppercase transition-all bg-white/5 text-text-secondary hover:bg-white/10 border border-white/5 flex items-center justify-center gap-2 group"
-              >
-                <Info className="w-3.5 h-3.5 group-hover:text-cyan-400 transition-colors" />
-                INSTRUKCJA GRY
-              </button>
-
-              <button
-                onClick={() => setShowChangelog(true)}
-                className="w-full mt-2 py-3 rounded-xl font-black text-[10px] tracking-[0.3em] uppercase transition-all bg-white/5 text-text-secondary hover:bg-white/10 border border-white/5 flex items-center justify-center gap-2 group"
-              >
-                <Sparkles className="w-3.5 h-3.5 group-hover:text-yellow-400 transition-colors" />
-                CO NOWEGO (PATCH NOTES)
-              </button>
             </div>
+          )}
+
+          <div className="mt-8 flex justify-center">
+            <span className="text-[9px] font-black tracking-widest text-neutral-600 uppercase">WERSJA: {appVersion}</span>
           </div>
         </motion.div>
         {renderGlobalOverlays()}
@@ -2175,6 +3478,7 @@ export default function App() {
     const sortedByMaster = (Object.entries(globalStats) as [string, UserStats][]).sort((a, b) => (b[1].masterWordWins || 0) - (a[1].masterWordWins || 0));
     const sortedByStreaks = (Object.entries(globalStats) as [string, UserStats][]).sort((a, b) => (b[1].maxStreak || 0) - (a[1].maxStreak || 0));
     const sortedByShields = (Object.entries(globalStats) as [string, UserStats][]).sort((a, b) => (b[1].totalShields || 0) - (a[1].totalShields || 0));
+    const sortedByTeamMvp = (Object.entries(globalStats) as [string, UserStats][]).sort((a, b) => (b[1].teamMvp || 0) - (a[1].teamMvp || 0));
     const globalMaxLevel = Math.max(...(Object.values(globalStats) as UserStats[]).map(s => s.maxLevelReached || 0), 0);
 
     const handleReset = () => {
@@ -2257,15 +3561,16 @@ export default function App() {
           </div>
 
           {/* TAB SWITCHER */}
-          <div className="flex bg-bg-card border border-border-color p-1.5 rounded-2xl overflow-hidden shadow-xl">
+          <div className="flex bg-bg-card border border-border-color p-1.5 rounded-2xl overflow-x-auto custom-scrollbar shadow-xl gap-1">
             {[
-              { id: 'world', icon: Globe, label: 'REKORD', desc: 'Najwyższy poziom osiągnięty przez społeczność' },
+              { id: 'world', icon: Globe, label: 'REKORD', desc: 'Najwyższy poziom osiągnięty przez społeczność (Tylko tryb klasyczny)' },
               { id: 'points', icon: Trophy, label: 'PUNKTY', desc: 'Suma wszystkich odgadniętych liter' },
               { id: 'rounds', icon: CheckCircle2, label: 'RUNDY', desc: 'Liczba rund zakończonych na 1. miejscu' },
               { id: 'games', icon: Trophy, label: 'SESJE', desc: 'Liczba wygranych całych sesji gry' },
               { id: 'masters', icon: Crown, label: 'MISTRZ', desc: 'Pierwsze odkrycia głównego hasła poziomu' },
               { id: 'streaks', icon: Flame, label: 'SERIE', desc: 'Najdłuższa seria wygranych rund z rzędu' },
-              { id: 'shields', icon: ShieldCheck, label: 'TARCZE', desc: 'Łączna liczba zebranych tarcz ochronnych' }
+              { id: 'shields', icon: ShieldCheck, label: 'TARCZE', desc: 'Łączna liczba zebranych tarcz ochronnych' },
+              { id: 'teamMvp', icon: Swords, label: 'MVP DRUŻYNY', desc: 'Łączna liczba tytułów MVP zdobytych w dowolnej drużynie' }
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = statsTab === tab.id;
@@ -2273,7 +3578,7 @@ export default function App() {
                 <button
                   key={tab.id}
                   onClick={() => setStatsTab(tab.id as any)}
-                  className={`flex-1 flex flex-col items-center py-4 gap-1.5 rounded-xl transition-all relative group/tab ${
+                  className={`flex-1 min-w-[95px] flex flex-col items-center py-4 gap-1.5 rounded-xl transition-all relative group/tab cursor-pointer ${
                     isActive 
                       ? 'bg-accent-red text-white shadow-lg' 
                       : 'text-text-secondary hover:bg-white/5'
@@ -2319,7 +3624,7 @@ export default function App() {
                       className="flex items-center gap-4 mb-6"
                     >
                       <div className="h-px w-12 bg-accent-red/30" />
-                      <span className="text-[10px] font-black tracking-[0.5em] text-accent-red uppercase">NAJDALSZA OSIĄGNIĘTA RUNDA</span>
+                      <span className="text-[10px] font-black tracking-[0.5em] text-accent-red uppercase">NAJDALSZA OSIĄGNIĘTA RUNDA (TRYB KLASYCZNY)</span>
                       <div className="h-px w-12 bg-accent-red/30" />
                     </motion.div>
 
@@ -2335,8 +3640,9 @@ export default function App() {
                       <div className="absolute -right-16 top-1/2 -translate-y-1/2 text-9xl font-thin text-white/5 pointer-events-none">]</div>
                     </div>
 
-                    <div className="bg-neutral-900/50 border border-white/5 px-10 py-4 rounded-2xl backdrop-blur-sm">
-                      <span className="text-sm font-black italic tracking-[0.2em] text-text-secondary uppercase">REKORD ŚWIATA</span>
+                    <div className="bg-neutral-900/50 border border-white/5 px-10 py-4 rounded-2xl backdrop-blur-sm flex flex-col items-center gap-1">
+                      <span className="text-sm font-black italic tracking-[0.2em] text-text-secondary uppercase">REKORD ŚWIATA • TYLKO TRYB KLASYCZNY</span>
+                      <span className="text-[9px] font-bold tracking-widest text-white/30 uppercase">*Rundy z trybu drużynowego nie są wliczane do tego rekordu</span>
                     </div>
                   </div>
                 </motion.section>
@@ -2359,6 +3665,7 @@ export default function App() {
                         {statsTab === 'masters' && 'RANKING MISTRZÓW'}
                         {statsTab === 'streaks' && 'RANKING SERII'}
                         {statsTab === 'shields' && 'RANKING TARCOWNIKÓW'}
+                        {statsTab === 'teamMvp' && 'RANKING MVP DRUŻYNY'}
                       </span>
                       <span className="text-[10px] font-bold text-text-secondary/50 uppercase">TOP 50 GRACZY</span>
                     </div>
@@ -2369,6 +3676,7 @@ export default function App() {
                       {statsTab === 'masters' && 'Liczba odkrytych haseł głównych (tych na samej górze).'}
                       {statsTab === 'streaks' && 'Rekordowa liczba rund wygranych pod rząd przez jednego gracza.'}
                       {statsTab === 'shields' && 'Łączna liczba tarcz zdobytych we wszystkich grach.'}
+                      {statsTab === 'teamMvp' && 'Łączna liczba tytułów MVP zdobytych przez gracza, niezależnie od tego, czy grał w drużynie Niebieskich, czy Czerwonych.'}
                     </p>
                   </div>
 
@@ -2385,8 +3693,17 @@ export default function App() {
                         else if (statsTab === 'masters') { data = sortedByMaster; colorClass = "text-orange-400"; valKey = "masterWordWins"; }
                         else if (statsTab === 'streaks') { data = sortedByStreaks; colorClass = "text-purple-400"; valKey = "maxStreak"; }
                         else if (statsTab === 'shields') { data = sortedByShields; colorClass = "text-cyan-400"; valKey = "totalShields"; }
+                        else if (statsTab === 'teamMvp') { 
+                          data = sortedByTeamMvp.filter(([_, item]) => (item.teamMvp || 0) > 0); 
+                          colorClass = "text-amber-400"; 
+                          valKey = "teamMvp"; 
+                        }
 
-                        if (data.length === 0) return <div className="py-24 text-center opacity-20 text-sm font-black uppercase tracking-widest">BRAK DANYCH</div>;
+                        if (data.length === 0) return (
+                          <div className="py-24 text-center opacity-20 text-sm font-black uppercase tracking-widest">
+                            {statsTab === 'teamMvp' ? 'BRAK DANYCH (ZAGRAJ I WYGRAJ MECZ DRUŻYNOWY)' : 'BRAK DANYCH'}
+                          </div>
+                        );
 
                         return data.slice(0, 50).map(([key, item], idx) => (
                           <motion.div 
@@ -2400,12 +3717,14 @@ export default function App() {
                               <span className={`text-sm font-black w-8 text-center ${idx < 3 ? colorClass : 'text-text-secondary/30'}`}>#{idx + 1}</span>
                               <div className="flex items-center gap-3">
                                 <UserBadges username={key} size="w-5 h-5" />
-                                <span className={`font-bold text-lg transition-all ${idx < 3 ? 'text-white' : 'text-text-secondary'}`}>{item.displayName || key}</span>
+                                <div className="flex flex-col">
+                                  <span className={`font-bold text-lg transition-all ${idx < 3 ? 'text-white' : 'text-text-secondary'}`}>{item.displayName || key}</span>
+                                </div>
                               </div>
                             </div>
                             <div className="flex flex-col items-end">
                               <span className={`font-black font-mono text-4xl ${colorClass}`}>
-                                {item[valKey] as number}
+                                {(item[valKey] as number) || 0}
                               </span>
                               <span className="text-[8px] font-black text-text-secondary/30 uppercase tracking-widest">
                                 {statsTab === 'points' && 'PKT'}
@@ -2414,6 +3733,7 @@ export default function App() {
                                 {statsTab === 'masters' && 'MISTRZOSTW'}
                                 {statsTab === 'streaks' && 'SERIA'}
                                 {statsTab === 'shields' && 'TARCZ'}
+                                {statsTab === 'teamMvp' && 'TYTUŁÓW MVP'}
                               </span>
                             </div>
                           </motion.div>
@@ -2439,6 +3759,571 @@ export default function App() {
   }
   // --- ROUND SUMMARY / LEADERBOARD SCREEN ---
   if (gameState === 'roundSummary') {
+    // TEAM MODE SUMMARY VIEW
+    if (gameMode === 'teams') {
+      const allStats = Object.values(teamPlayerStats) as TeamMemberStat[];
+      const blueStats = allStats.filter(p => p.team === 'blue');
+      const redStats = allStats.filter(p => p.team === 'red');
+
+      const sortedBlue = [...blueStats].sort((a, b) => b.points - a.points || b.wordsFound - a.wordsFound);
+      const sortedRed = [...redStats].sort((a, b) => b.points - a.points || b.wordsFound - a.wordsFound);
+
+      const blueMvp: TeamMemberStat | null = sortedBlue[0] || (blueTeam[0] ? { username: blueTeam[0], points: 0, wordsFound: 0, team: 'blue' as const } : null);
+      const redMvp: TeamMemberStat | null = sortedRed[0] || (redTeam[0] ? { username: redTeam[0], points: 0, wordsFound: 0, team: 'red' as const } : null);
+
+      const isMatchWon = teamMatchWinner === 'blue' || teamMatchWinner === 'red';
+      const winner = teamMatchWinner;
+
+      const roundTotalLetters = possibleAnswers.reduce((acc, word) => acc + word.length, 0);
+      const roundFoundLetters = foundWords.reduce((acc, fw) => acc + fw.word.length, 0);
+      const teamRoundRate = roundTotalLetters === 0 ? 0 : (roundFoundLetters / roundTotalLetters) * 100;
+      let teamRoundJump = 1;
+      if (teamRoundRate >= 100) teamRoundJump = 3;
+      else if (teamRoundRate >= 85) teamRoundJump = 2;
+
+      // Helper to identify player's team
+      const getPlayerTeam = (username: string): 'blue' | 'red' | 'spectator' => {
+        const u = username.toLowerCase();
+        if (blueTeam.some(p => p.toLowerCase() === u)) return 'blue';
+        if (redTeam.some(p => p.toLowerCase() === u)) return 'red';
+        return 'spectator';
+      };
+
+      // 1. ROUND POINTS BREAKDOWN (WYNIK RUNDY)
+      const roundContributors = foundWords.reduce((acc, fw) => {
+        acc[fw.user] = (acc[fw.user] || 0) + (fw.points || fw.word.length);
+        return acc;
+      }, {} as Record<string, number>);
+
+      const sortedRoundContributors = (Object.entries(roundContributors) as [string, number][])
+        .sort((a, b) => b[1] - a[1]);
+
+      const roundBluePoints = foundWords
+        .filter(fw => getPlayerTeam(fw.user) === 'blue')
+        .reduce((acc, fw) => acc + (fw.points || fw.word.length), 0);
+      const roundRedPoints = foundWords
+        .filter(fw => getPlayerTeam(fw.user) === 'red')
+        .reduce((acc, fw) => acc + (fw.points || fw.word.length), 0);
+
+      // 2. OVERALL SESSION / MATCH BREAKDOWN (KLASYFIKACJA SESJI)
+      const allSessionPlayers = Array.from(new Set([
+        ...blueTeam,
+        ...redTeam,
+        ...Object.keys(sessionScores)
+      ])).map(name => {
+        const stat = teamPlayerStats[name.toLowerCase()];
+        const pts = sessionScores[name] ?? (stat?.points || 0);
+        const words = stat?.wordsFound || 0;
+        const team = stat?.team || getPlayerTeam(name);
+        return { username: name, points: pts, wordsFound: words, team };
+      }).filter(p => p.points > 0 || blueTeam.includes(p.username) || redTeam.includes(p.username))
+        .sort((a, b) => b.points - a.points || b.wordsFound - a.wordsFound);
+
+      return (
+        <div className="min-h-screen bg-bg-main text-text-primary font-sans flex flex-col items-center p-4 pt-12 pb-16 relative overflow-y-auto custom-scrollbar">
+          {/* Ambient lighting */}
+          {isMatchWon ? (
+            winner === 'blue' ? (
+              <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-blue-600/20 rounded-full blur-3xl pointer-events-none" />
+            ) : (
+              <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-red-600/20 rounded-full blur-3xl pointer-events-none" />
+            )
+          ) : (
+            <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-red-600/10 rounded-full blur-3xl pointer-events-none" />
+          )}
+
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="max-w-5xl w-full flex flex-col items-center z-10"
+          >
+            {/* Header: KO Match Victory vs Ongoing Round Transition */}
+            <div className="flex flex-col items-center text-center mb-6">
+              {isMatchWon ? (
+                winner === 'blue' ? (
+                  <>
+                    <div className="w-20 h-20 rounded-2xl bg-blue-600/20 border-2 border-blue-500/50 flex items-center justify-center text-blue-400 mb-3 shadow-[0_0_30px_rgba(59,130,246,0.5)]">
+                      <Trophy className="w-10 h-10 text-blue-400 drop-shadow" />
+                    </div>
+                    <h2 className="text-4xl md:text-5xl font-black italic tracking-tighter text-blue-400 uppercase drop-shadow-[0_0_20px_rgba(59,130,246,0.6)]">
+                      ZWYCIĘSTWO DRUŻYNY NIEBIESKIEJ!
+                    </h2>
+                    <p className="text-blue-300 font-bold tracking-widest text-xs uppercase mt-1">
+                      ⚡ WYGRANA PRZEZ K.O. – 100 PKT ZDOBYTE W RUNDZIE {teamRound}!
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-20 h-20 rounded-2xl bg-red-600/20 border-2 border-red-500/50 flex items-center justify-center text-red-400 mb-3 shadow-[0_0_30px_rgba(239,68,68,0.5)]">
+                      <Trophy className="w-10 h-10 text-red-400 drop-shadow" />
+                    </div>
+                    <h2 className="text-4xl md:text-5xl font-black italic tracking-tighter text-red-400 uppercase drop-shadow-[0_0_20px_rgba(239,68,68,0.6)]">
+                      ZWYCIĘSTWO DRUŻYNY CZERWONEJ!
+                    </h2>
+                    <p className="text-red-300 font-bold tracking-widest text-xs uppercase mt-1">
+                      ⚡ WYGRANA PRZEZ K.O. – 100 PKT ZDOBYTE W RUNDZIE {teamRound}!
+                    </p>
+                  </>
+                )
+              ) : (
+                <>
+                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-600/20 via-purple-600/20 to-red-600/20 border-2 border-yellow-500/50 flex items-center justify-center text-yellow-400 mb-3 shadow-[0_0_30px_rgba(234,179,8,0.4)]">
+                    <Swords className="w-10 h-10 text-yellow-400 drop-shadow" />
+                  </div>
+                  <h2 className="text-3xl md:text-5xl font-black italic tracking-tighter text-white uppercase drop-shadow-[0_0_25px_rgba(255,255,255,0.4)]">
+                    KONIEC RUNDY {teamRound} — WALKA TRWA DALEJ!
+                  </h2>
+                  <p className="text-yellow-400 font-black tracking-widest text-xs uppercase mt-1 flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+                    ŻADNA Z DRUŻYN NIE OSIĄGNĘŁA 100 PKT (BRAK K.O.). PUNKTY I POZYCJA LINY ZOSTAJĄ ZACHOWANE NA RUNDĘ {teamRound + 1}!
+                    <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+                  </p>
+                  {teamRoundJump > 1 && (
+                    <div className="mt-2 inline-flex items-center gap-2 px-3.5 py-1 bg-yellow-500/20 border border-yellow-500/40 rounded-full text-yellow-300 text-xs font-black uppercase shadow-lg animate-pulse">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Świetna runda ({teamRoundRate.toFixed(0)}% liter)! W następnej rundzie skok o +{teamRoundJump} poziomy trudności!
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Rope Gauge Status with Carry-Over Banner */}
+            <div className="w-full bg-bg-card border border-white/10 rounded-2xl p-4 shadow-xl mb-6 flex flex-col gap-2 relative overflow-hidden">
+              <div className="flex justify-between items-center text-xs font-black uppercase">
+                <span className="text-blue-400 font-mono">NIEBIESCY: {ropePosition.toFixed(1)} PKT ({ropePosition.toFixed(1)}%)</span>
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                  isMatchWon 
+                    ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' 
+                    : 'bg-green-500/20 text-green-300 border border-green-500/40 animate-pulse'
+                }`}>
+                  {isMatchWon ? 'STAN KOŃCOWY (K.O.)' : `🔒 PUNKTY I LINA ZACHOWANE NA RUNDĘ ${teamRound + 1}`}
+                </span>
+                <span className="text-red-400 font-mono">CZERWONI: {(100 - ropePosition).toFixed(1)} PKT ({(100 - ropePosition).toFixed(1)}%)</span>
+              </div>
+
+              <div className="relative w-full h-6 bg-neutral-950 rounded-xl overflow-hidden border border-white/10">
+                <div 
+                  className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-blue-700 to-cyan-400 shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+                  style={{ width: `${ropePosition}%` }}
+                />
+                <div 
+                  className="absolute right-0 top-0 bottom-0 bg-gradient-to-l from-red-700 to-orange-400 shadow-[0_0_15px_rgba(239,68,68,0.5)]"
+                  style={{ width: `${100 - ropePosition}%` }}
+                />
+                <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-0.5 bg-white/80 z-10" />
+
+                {/* Knot position indicator */}
+                <div 
+                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 w-5 h-5 rounded-full bg-white border border-yellow-400 shadow-[0_0_10px_#fff]"
+                  style={{ left: `${ropePosition}%` }}
+                />
+              </div>
+
+              {!isMatchWon && (
+                <p className="text-center text-[10px] font-bold text-white/50 uppercase tracking-wider mt-1">
+                  W Rundzie {teamRound + 1} przeciąganie liny rozpocznie się od tego stanu ({ropePosition.toFixed(1)} PKT vs {(100 - ropePosition).toFixed(1)} PKT)!
+                </p>
+              )}
+            </div>
+
+            {/* MVP CARDS FOR BOTH TEAMS */}
+            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              {/* Blue Team MVP */}
+              <div className="bg-gradient-to-br from-blue-950/40 to-blue-900/10 border-2 border-blue-500/40 rounded-2xl p-5 shadow-2xl relative overflow-hidden backdrop-blur-md">
+                <div className="absolute top-3 right-3 opacity-20">
+                  <ShieldCheck className="w-20 h-20 text-blue-400" />
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Crown className="w-5 h-5 text-yellow-400 drop-shadow" />
+                  <span className="text-xs font-black tracking-widest text-blue-300 uppercase">
+                    MVP DRUŻYNY NIEBIESKIEJ
+                  </span>
+                </div>
+                {blueMvp ? (
+                  <div>
+                    <h3 className="text-2xl md:text-3xl font-black italic text-white tracking-tight truncate">
+                      {blueMvp.username}
+                    </h3>
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="px-2.5 py-1 bg-blue-500/20 text-blue-300 font-mono font-black text-xs rounded-lg border border-blue-500/30">
+                        +{blueMvp.points} PKT
+                      </span>
+                      <span className="text-xs font-bold text-white/50 uppercase">
+                        {blueMvp.wordsFound} {blueMvp.wordsFound === 1 ? 'HASŁO' : 'HASEŁ'}
+                      </span>
+                    </div>
+                    {isMatchWon && (
+                      <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 text-[10px] font-black uppercase tracking-wider shadow-[0_0_15px_rgba(234,179,8,0.25)] animate-pulse">
+                        <Trophy className="w-3.5 h-3.5 text-yellow-400" />
+                        +1 PKT W STATYSTYKACH (MVP DRUŻYNY)
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-xs font-bold text-white/40 italic">Brak trafień w tej rundzie</span>
+                )}
+              </div>
+
+              {/* Red Team MVP */}
+              <div className="bg-gradient-to-br from-red-950/40 to-red-900/10 border-2 border-red-500/40 rounded-2xl p-5 shadow-2xl relative overflow-hidden backdrop-blur-md">
+                <div className="absolute top-3 right-3 opacity-20">
+                  <Flame className="w-20 h-20 text-red-400" />
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Crown className="w-5 h-5 text-yellow-400 drop-shadow" />
+                  <span className="text-xs font-black tracking-widest text-red-300 uppercase">
+                    MVP DRUŻYNY CZERWONEJ
+                  </span>
+                </div>
+                {redMvp ? (
+                  <div>
+                    <h3 className="text-2xl md:text-3xl font-black italic text-white tracking-tight truncate">
+                      {redMvp.username}
+                    </h3>
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="px-2.5 py-1 bg-red-500/20 text-red-300 font-mono font-black text-xs rounded-lg border border-red-500/30">
+                        +{redMvp.points} PKT
+                      </span>
+                      <span className="text-xs font-bold text-white/50 uppercase">
+                        {redMvp.wordsFound} {redMvp.wordsFound === 1 ? 'HASŁO' : 'HASEŁ'}
+                      </span>
+                    </div>
+                    {isMatchWon && (
+                      <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 text-[10px] font-black uppercase tracking-wider shadow-[0_0_15px_rgba(234,179,8,0.25)] animate-pulse">
+                        <Trophy className="w-3.5 h-3.5 text-yellow-400" />
+                        +1 PKT W STATYSTYKACH (MVP DRUŻYNY)
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-xs font-bold text-white/40 italic">Brak trafień w tej rundzie</span>
+                )}
+              </div>
+            </div>
+
+            {/* Side-by-Side Tables: WYNIK RUNDY & KLASYFIKACJA SESJI */}
+            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              {/* Round Leaderboard Card */}
+              <div className="bg-bg-card border border-border-color rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+                <div className="p-5 bg-neutral-900/60 border-b border-border-color flex justify-between items-center">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-black tracking-widest uppercase text-text-secondary">
+                      WYNIK RUNDY {teamRound}
+                    </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] font-mono font-bold text-blue-400">
+                        N: +{roundBluePoints} pkt
+                      </span>
+                      <span className="text-white/20">•</span>
+                      <span className="text-[10px] font-mono font-bold text-red-400">
+                        C: +{roundRedPoints} pkt
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[8px] font-bold text-text-secondary uppercase">ODGADNIĘTO</p>
+                    <p className="text-sm font-black text-yellow-400">{foundWords.length}/{possibleAnswers.length}</p>
+                  </div>
+                </div>
+
+                <div className="max-h-[300px] min-h-[200px] overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                  {sortedRoundContributors.length > 0 ? (
+                    sortedRoundContributors.map(([user, points], index) => {
+                      const team = getPlayerTeam(user);
+                      return (
+                        <motion.div 
+                          initial={{ x: -20, opacity: 0 }}
+                          animate={{ x: 0, opacity: 1 }}
+                          transition={{ delay: index * 0.04 }}
+                          key={`round-${user}`} 
+                          className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+                            team === 'blue' 
+                              ? 'bg-blue-950/20 border-blue-500/30' 
+                              : team === 'red'
+                                ? 'bg-red-950/20 border-red-500/30'
+                                : 'bg-bg-main/50 border-border-color'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className={`w-5 text-[10px] font-black ${index === 0 ? 'text-yellow-400' : 'text-text-secondary'}`}>
+                              #{index + 1}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              {team === 'blue' ? (
+                                <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[8px] font-black uppercase tracking-wider">
+                                  NIEBIESCY
+                                </span>
+                              ) : team === 'red' ? (
+                                <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 text-[8px] font-black uppercase tracking-wider">
+                                  CZERWONI
+                                </span>
+                              ) : null}
+                              <UserBadges username={user} size="w-3.5 h-3.5" />
+                              <span className="font-bold text-sm text-white">{user}</span>
+                            </div>
+                          </div>
+                          <span className={`font-black font-mono text-sm ${team === 'blue' ? 'text-blue-400' : team === 'red' ? 'text-red-400' : 'text-accent-red'}`}>
+                            +{points} pkt
+                          </span>
+                        </motion.div>
+                      );
+                    })
+                  ) : (
+                    <div className="py-12 text-center opacity-30 text-[10px] font-black uppercase tracking-widest">
+                      Brak odgadniętych haseł w tej rundzie
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Global Match/Session Leaderboard Card */}
+              <div className="bg-bg-card border border-border-color rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+                <div className="p-5 bg-purple-900/20 border-b border-border-color flex justify-between items-center">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-black tracking-widest uppercase text-purple-400">
+                      KLASYFIKACJA CAŁEGO MECZU (SESJA)
+                    </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] font-mono font-bold text-blue-400">
+                        NIEBIESCY: {teamScores.blue} pkt
+                      </span>
+                      <span className="text-white/20">•</span>
+                      <span className="text-[10px] font-mono font-bold text-red-400">
+                        CZERWONI: {teamScores.red} pkt
+                      </span>
+                    </div>
+                  </div>
+                  <ShieldCheck className="w-5 h-5 text-purple-400" />
+                </div>
+
+                <div className="max-h-[300px] min-h-[200px] overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                  {allSessionPlayers.length > 0 ? (
+                    allSessionPlayers.map((player, index) => (
+                      <motion.div 
+                        initial={{ x: 20, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        transition={{ delay: index * 0.04 }}
+                        key={`session-${player.username}`} 
+                        className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+                          player.team === 'blue'
+                            ? 'bg-blue-950/20 border-blue-500/30'
+                            : player.team === 'red'
+                              ? 'bg-red-950/20 border-red-500/30'
+                              : 'bg-bg-main/50 border-purple-500/20'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className={`w-5 text-[10px] font-black ${index === 0 ? 'text-yellow-400' : 'text-text-secondary'}`}>
+                            #{index + 1}
+                          </span>
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              {player.team === 'blue' ? (
+                                <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[8px] font-black uppercase tracking-wider">
+                                  NIEBIESCY
+                                </span>
+                              ) : player.team === 'red' ? (
+                                <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 text-[8px] font-black uppercase tracking-wider">
+                                  CZERWONI
+                                </span>
+                              ) : null}
+                              <UserBadges username={player.username} size="w-3.5 h-3.5" />
+                              <span className="font-bold text-sm text-white">{player.username}</span>
+                            </div>
+                            {player.wordsFound > 0 && (
+                              <span className="text-[9px] font-bold text-white/40 uppercase mt-0.5 ml-0.5">
+                                {player.wordsFound} {player.wordsFound === 1 ? 'hasło' : 'haseł'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <span className={`font-black font-mono text-sm ${player.team === 'blue' ? 'text-blue-400' : player.team === 'red' ? 'text-red-400' : 'text-purple-400'}`}>
+                          {player.points} pkt
+                        </span>
+                      </motion.div>
+                    ))
+                  ) : (
+                    <div className="py-12 text-center opacity-30 text-[10px] font-black uppercase tracking-widest">
+                      Brak punktów w meczu
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Word Breakdown Toggle Button & Grid (With Team Colors) */}
+            <div className="w-full max-w-5xl mb-6 flex flex-col gap-3">
+              <button 
+                onClick={() => setShowRoundWords(!showRoundWords)}
+                className="w-full bg-white/5 border border-white/10 hover:bg-white/10 text-white py-3.5 rounded-xl font-bold tracking-widest uppercase transition-all flex items-center justify-center gap-2 text-xs shadow-lg group cursor-pointer"
+              >
+                <Lightbulb className={`w-4 h-4 transition-colors ${showRoundWords ? 'text-yellow-400' : 'text-text-secondary group-hover:text-yellow-400'}`} />
+                {showRoundWords ? 'UKRYJ HASŁA RUNDY' : 'POKAŻ HASŁA RUNDY (Z KOLORAMI DRUŻYN)'}
+              </button>
+
+              {showRoundWords && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-bg-card border border-border-color p-6 rounded-2xl shadow-2xl w-full"
+                >
+                  <div className="flex flex-col items-center mb-5">
+                    <h3 className="text-[11px] font-black text-text-secondary uppercase tracking-[0.3em] text-center mb-2">
+                      HASŁA RUNDY {teamRound} — KTO ODGADŁ DANE SŁOWO
+                    </h3>
+                    <div className="flex flex-wrap items-center justify-center gap-4 text-[10px] font-bold">
+                      <span className="flex items-center gap-1.5 text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-lg border border-blue-500/30">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-blue-500 shadow-[0_0_6px_#3b82f6]" />
+                        NIEBIESCY: {foundWords.filter(fw => getPlayerTeam(fw.user) === 'blue').length}
+                      </span>
+                      <span className="flex items-center gap-1.5 text-red-400 bg-red-500/10 px-2.5 py-1 rounded-lg border border-red-500/30">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-red-500 shadow-[0_0_6px_#ef4444]" />
+                        CZERWONI: {foundWords.filter(fw => getPlayerTeam(fw.user) === 'red').length}
+                      </span>
+                      <span className="flex items-center gap-1.5 text-white/50 bg-white/5 px-2.5 py-1 rounded-lg border border-white/10">
+                        <span className="w-2.5 h-2.5 rounded-sm bg-white/20" />
+                        NIEODKRYTE: {possibleAnswers.length - foundWords.length}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
+                    {possibleAnswers.map(word => {
+                      const found = foundWords.find(fw => fw.word === word);
+                      const solverTeam = found ? getPlayerTeam(found.user) : null;
+                      const specialType = specialWords[word];
+                      const isMaster = word === currentLevel.masterWord;
+
+                      let cardStyle = 'bg-white/5 border-white/10 text-white/30';
+                      let teamBadge = null;
+
+                      if (found) {
+                        if (solverTeam === 'blue') {
+                          cardStyle = 'bg-blue-950/40 border-2 border-blue-500/80 shadow-[0_0_15px_rgba(59,130,246,0.3)] text-blue-200';
+                          teamBadge = (
+                            <span className="px-1.5 py-0.5 rounded bg-blue-500/30 text-blue-300 border border-blue-400/40 text-[8px] font-black uppercase tracking-wider flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_4px_#3b82f6]" />
+                              NIEBIESCY
+                            </span>
+                          );
+                        } else if (solverTeam === 'red') {
+                          cardStyle = 'bg-red-950/40 border-2 border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.3)] text-red-200';
+                          teamBadge = (
+                            <span className="px-1.5 py-0.5 rounded bg-red-500/30 text-red-300 border border-red-400/40 text-[8px] font-black uppercase tracking-wider flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-400 shadow-[0_0_4px_#ef4444]" />
+                              CZERWONI
+                            </span>
+                          );
+                        } else {
+                          cardStyle = 'bg-green-950/40 border-2 border-green-500/60 text-green-300';
+                          teamBadge = (
+                            <span className="px-1.5 py-0.5 rounded bg-green-500/20 text-green-300 text-[8px] font-black uppercase">
+                              GRACZ
+                            </span>
+                          );
+                        }
+                      }
+
+                      return (
+                        <div
+                          key={word}
+                          className={`p-3 rounded-xl border flex flex-col items-center justify-between min-h-[76px] relative overflow-hidden transition-all ${cardStyle}`}
+                        >
+                          <div className="w-full flex items-center justify-between mb-1">
+                            {teamBadge ? (
+                              teamBadge
+                            ) : (
+                              <span className="text-[8px] font-black uppercase tracking-widest text-white/30">
+                                {isMaster ? '⭐ GŁÓWNE' : 'NIEODKRYTE'}
+                              </span>
+                            )}
+                            {specialType && !found && (
+                              <span className="w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_6px_#facc15]" title={specialType} />
+                            )}
+                          </div>
+
+                          <span className={`text-sm font-black font-mono tracking-tight text-center truncate max-w-full ${found ? 'text-white' : 'text-white/40'}`}>
+                            {word}
+                          </span>
+
+                          {found ? (
+                            <div className="w-full mt-1.5 pt-1 border-t border-white/10 flex items-center justify-between text-[9px] font-bold">
+                              <span className="truncate max-w-[90px]">{found.user}</span>
+                              <span className="font-mono font-black text-yellow-400 shrink-0">+{found.points} pkt</span>
+                            </div>
+                          ) : (
+                            <div className="w-full mt-1 text-[8px] text-white/20 text-center font-mono">
+                              {word.length} LIT.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </div>
+
+            {/* Action Buttons for Team Mode */}
+            <div className="w-full max-w-xl space-y-3">
+              {!isMatchWon ? (
+                <button 
+                  onClick={nextTeamRound}
+                  className="w-full bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white py-4 rounded-xl font-black tracking-[0.2em] uppercase transition-all shadow-[0_0_25px_rgba(168,85,247,0.4)] active:scale-95 flex items-center justify-center gap-3 text-sm cursor-pointer"
+                >
+                  <FastForward className="w-5 h-5 text-yellow-300 animate-pulse" />
+                  NASTĘPNA RUNDA {teamRound + 1} {teamRoundJump > 1 ? `(SKOK O +${teamRoundJump} POZIOMY! 🚀)` : ''} (LINA ZOSTAJE ➔)
+                </button>
+              ) : (
+                <button 
+                  onClick={startTeamGame}
+                  className="w-full bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white py-4 rounded-xl font-black tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2 text-sm cursor-pointer"
+                >
+                  <Swords className="w-5 h-5 text-yellow-300" />
+                  ZAGRAJ JESZCZE RAZ TYMI SAMYMI DRUŻYNAMI (START OD RUNDY 1)
+                </button>
+              )}
+              
+              <button 
+                onClick={() => {
+                  setGameState('lobby');
+                  setFoundWords([]);
+                  setShowRoundWords(false);
+                  setSessionScores({});
+                  setLevelIndex(0);
+                  setTimeLeft(INITIAL_TIME);
+                  setHints({});
+                  setTeamRound(1);
+                  setRopePosition(50);
+                  setTeamScores({ blue: 0, red: 0 });
+                  setTeamPlayerStats({});
+                  setCurrentTeamStreak({ team: null, count: 0 });
+                  setTeamMatchWinner(null);
+                  setTeamWinReason(null);
+                  setLastPullDelta(null);
+                  teamMvpAwardedRef.current = false;
+                }}
+                className="w-full bg-white/5 hover:bg-white/10 text-white border border-white/10 py-3.5 rounded-xl font-black tracking-widest text-xs uppercase transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Users className="w-4 h-4 text-cyan-400" />
+                POWRÓT DO LOBBY DRUŻYN
+              </button>
+
+              <button 
+                onClick={exitToLobby}
+                className="w-full bg-neutral-800 hover:bg-neutral-700 text-white/60 hover:text-white py-3 rounded-xl font-bold tracking-widest text-[10px] uppercase transition-all cursor-pointer"
+              >
+                MENU GŁÓWNE
+              </button>
+            </div>
+          </motion.div>
+          {renderGlobalOverlays()}
+        </div>
+      );
+    }
+
+
     const roundTotalLetters = possibleAnswers.reduce((acc, word) => acc + word.length, 0);
     const roundFoundLetters = foundWords.reduce((acc, fw) => acc + fw.word.length, 0);
     const roundCompletionRate = roundTotalLetters === 0 ? 0 : (roundFoundLetters / roundTotalLetters) * 100;
@@ -2704,8 +4589,131 @@ export default function App() {
   return (
     <div className="h-screen bg-bg-main text-text-primary font-sans flex flex-col overflow-hidden items-center">
       
+      {/* TUG OF WAR ARENA BAR (TEAM MODE) */}
+      {gameMode === 'teams' && (
+        <div className="w-full max-w-7xl mx-auto px-4 pt-2 pb-1 z-40 shrink-0">
+          <div className="bg-black/60 border border-white/10 rounded-xl p-2 md:p-2.5 backdrop-blur-xl shadow-2xl flex flex-col gap-1.5 relative overflow-hidden">
+            {/* Top Team Status Header */}
+            <div className="flex items-center justify-between px-2">
+              {/* Blue Team Info */}
+              <div className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-lg bg-blue-600/30 border border-blue-500/50 flex items-center justify-center text-blue-400 font-black shadow-[0_0_15px_rgba(59,130,246,0.4)]">
+                  <ShieldCheck className="w-5 h-5 text-blue-400" />
+                </div>
+                <div className="flex flex-col text-left">
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-blue-400 text-sm tracking-wider uppercase drop-shadow-[0_0_8px_rgba(59,130,246,0.6)]">
+                      DRUŻYNA NIEBIESKA
+                    </span>
+                    {currentTeamStreak.team === 'blue' && currentTeamStreak.count >= 2 && (
+                      <span className="bg-blue-500/20 text-blue-300 border border-blue-500/40 text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.4)]">
+                        <Flame className="w-3 h-3 text-blue-400" />
+                        COMBO x{currentTeamStreak.count} (+{currentTeamStreak.count === 2 ? '30' : currentTeamStreak.count === 3 ? '60' : '100'}% SIŁY)
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-white/50 uppercase">
+                    <span>{blueTeam.length} GRACZY</span>
+                    <span>•</span>
+                    <span className="text-blue-300 font-mono font-bold">PUNKTY: {ropePosition.toFixed(1)} / 100 PKT ({ropePosition.toFixed(1)}%) →</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Center Tug of War Label & Delta */}
+              <div className="hidden md:flex flex-col items-center">
+                <div className="flex items-center gap-1.5 text-[9px] font-black tracking-widest uppercase text-white/50">
+                  <Swords className="w-3.5 h-3.5 text-yellow-400" />
+                  <span>PRZECIĄGANIE LINY • START: 50 / 50 PKT</span>
+                </div>
+                {lastPullDelta && (
+                  <motion.div
+                    key={`${lastPullDelta.user}-${lastPullDelta.amount}-${Date.now()}`}
+                    initial={{ scale: 0.8, opacity: 0, y: -4 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    className={`text-[10px] font-black tracking-wider uppercase mt-0.5 flex items-center gap-1 ${
+                      lastPullDelta.team === 'blue' ? 'text-blue-400' : 'text-red-400'
+                    }`}
+                  >
+                    {lastPullDelta.team === 'blue' ? (
+                      <span>► +{lastPullDelta.amount} PKT ("{lastPullDelta.word}" • {lastPullDelta.word.length} LIT.) OD {lastPullDelta.user}!</span>
+                    ) : (
+                      <span>◄ +{lastPullDelta.amount} PKT ("{lastPullDelta.word}" • {lastPullDelta.word.length} LIT.) OD {lastPullDelta.user}!</span>
+                    )}
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Red Team Info */}
+              <div className="flex items-center gap-3 flex-row-reverse text-right">
+                <div className="w-7 h-7 rounded-lg bg-red-600/30 border border-red-500/50 flex items-center justify-center text-red-400 font-black shadow-[0_0_15px_rgba(239,68,68,0.4)]">
+                  <Flame className="w-5 h-5 text-red-400" />
+                </div>
+                <div className="flex flex-col items-end">
+                  <div className="flex items-center gap-2 flex-row-reverse">
+                    <span className="font-black text-red-400 text-sm tracking-wider uppercase drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]">
+                      DRUŻYNA CZERWONA
+                    </span>
+                    {currentTeamStreak.team === 'red' && currentTeamStreak.count >= 2 && (
+                      <span className="bg-red-500/20 text-red-300 border border-red-500/40 text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.4)]">
+                        <Flame className="w-3 h-3 text-red-400" />
+                        COMBO x{currentTeamStreak.count} (+{currentTeamStreak.count === 2 ? '30' : currentTeamStreak.count === 3 ? '60' : '100'}% SIŁY)
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-white/50 uppercase">
+                    <span className="text-red-300 font-mono font-bold">← PUNKTY: {(100 - ropePosition).toFixed(1)} / 100 PKT ({(100 - ropePosition).toFixed(1)}%)</span>
+                    <span>•</span>
+                    <span>{redTeam.length} GRACZY</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Dynamic Tug-of-War Laser Bar */}
+            <div className="relative w-full h-6 bg-neutral-950 rounded-xl border border-white/20 overflow-hidden shadow-[inset_0_2px_8px_rgba(0,0,0,0.8)] flex items-center">
+              {/* Blue fill */}
+              <div 
+                className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-blue-700 via-blue-500 to-cyan-400 transition-all duration-300 shadow-[0_0_20px_rgba(59,130,246,0.6)]"
+                style={{ width: `${ropePosition}%` }}
+              />
+              {/* Red fill */}
+              <div 
+                className="absolute right-0 top-0 bottom-0 bg-gradient-to-l from-red-700 via-red-500 to-orange-400 transition-all duration-300 shadow-[0_0_20px_rgba(239,68,68,0.6)]"
+                style={{ width: `${100 - ropePosition}%` }}
+              />
+
+              {/* Center Line Marker (50 PKT Start) */}
+              <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-0.5 bg-white/70 z-10 flex flex-col justify-between items-center py-0.5 pointer-events-none">
+                <span className="text-[7px] font-black text-white/80 bg-black/60 px-1 rounded-sm leading-none">50</span>
+                <span className="text-[7px] font-black text-white/80 bg-black/60 px-1 rounded-sm leading-none">PKT</span>
+              </div>
+
+              {/* Left & Right K.O. Threshold Indicators */}
+              <div className="absolute left-3 text-[9px] font-black tracking-widest text-white drop-shadow z-10 flex items-center gap-1">
+                <span>◄ K.O. CZERWONI (100 PKT)</span>
+              </div>
+              <div className="absolute right-3 text-[9px] font-black tracking-widest text-white drop-shadow z-10 flex items-center gap-1">
+                <span>(100 PKT) K.O. NIEBIESCY ►</span>
+              </div>
+
+              {/* Sliding Laser Knot Indicator */}
+              <motion.div
+                animate={{ left: `${ropePosition}%` }}
+                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 flex items-center justify-center pointer-events-none"
+              >
+                <div className="w-8 h-8 rounded-full bg-white border-2 border-yellow-400 shadow-[0_0_25px_#ffffff,0_0_15px_#facc15] flex items-center justify-center">
+                  <Swords className="w-4 h-4 text-neutral-900 animate-spin-slow" />
+                </div>
+              </motion.div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Letters Section (The Scrambler) */}
-      <section className={`w-full h-[240px] flex flex-col items-center justify-center bg-linear-to-b from-bg-card to-bg-main relative transition-all duration-700 overflow-visible z-30 ${isDarknessActive ? 'blur-xl grayscale opacity-30 pointer-events-none scale-110' : ''}`}>
+      <section className={`w-full ${gameMode === 'teams' ? 'h-[170px] md:h-[180px]' : 'h-[240px]'} shrink-0 flex flex-col items-center justify-center bg-linear-to-b from-bg-card to-bg-main relative transition-all duration-700 overflow-visible z-30 ${isDarknessActive ? 'blur-xl grayscale opacity-30 pointer-events-none scale-110' : ''}`}>
           <div 
             className="flex flex-wrap justify-center items-center px-4 transition-transform duration-300 overflow-visible max-w-full"
             style={{ 
@@ -2761,7 +4769,7 @@ export default function App() {
           </div>
         
         {/* Time Progress Bar (No Digital Clock) */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[95%] max-w-7xl">
+        <div className={`absolute ${gameMode === 'teams' ? 'bottom-2' : 'bottom-4'} left-1/2 -translate-x-1/2 w-[95%] max-w-7xl`}>
           <div className="w-full h-5 bg-black/40 rounded-full border-2 border-white/10 overflow-hidden shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)] flex justify-start relative">
             <motion.div 
               initial={{ width: "100%" }}
@@ -2776,16 +4784,20 @@ export default function App() {
       </section>
 
       {/* Main Gameplay Area with Grid and Chat */}
-      <main className="flex-1 w-full max-w-[1800px] flex gap-10 p-4 md:p-10 overflow-hidden items-stretch h-0">
+      <main className={`flex-1 min-h-0 w-full max-w-[1800px] flex ${gameMode === 'teams' ? 'gap-5 p-3 md:p-4' : 'gap-10 p-4 md:p-10'} overflow-hidden items-stretch`}>
         
         {/* Answers Grid Section */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-4">
+          <div className={`flex justify-between items-center ${gameMode === 'teams' ? 'mb-2 pb-2' : 'mb-4 pb-4'} border-b border-white/5`}>
             <div className="flex flex-col min-w-[150px]">
               <div className="flex items-center gap-3 mb-1">
-                <span className="text-[10px] font-black tracking-[0.3em] text-text-secondary uppercase opacity-50">STREFA GRY</span>
+                <span className="text-[10px] font-black tracking-[0.3em] text-text-secondary uppercase opacity-50">
+                  {gameMode === 'teams' ? 'PRZECIĄGANIE LINY' : 'STREFA GRY'}
+                </span>
               </div>
-              <span className="text-4xl font-black italic tracking-tighter text-accent-red uppercase italic leading-none">POZIOM {levelIndex + 1}</span>
+              <span className={`${gameMode === 'teams' ? 'text-2xl md:text-3xl' : 'text-4xl'} font-black italic tracking-tighter text-accent-red uppercase italic leading-none`}>
+                {gameMode === 'teams' ? `RUNDA ${teamRound}` : `POZIOM ${levelIndex + 1}`}
+              </span>
             </div>
 
             {/* Notifications Middle */}
@@ -2827,11 +4839,11 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto -mr-2 pr-4 pt-4 overflow-x-hidden">
+          <div className="flex-1 min-h-0 overflow-y-auto -mr-2 pr-3 pt-2 overflow-x-hidden">
             <div 
-              className={`grid ${isCompactLayout ? 'gap-2' : 'gap-4'} h-full content-start transition-all duration-300 ${isDarknessActive ? 'blur-md grayscale opacity-20 pointer-events-none' : ''}`}
+              className={`grid ${gameMode === 'teams' ? 'gap-2' : isCompactLayout ? 'gap-2' : 'gap-4'} content-start transition-all duration-300 ${isDarknessActive ? 'blur-md grayscale opacity-20 pointer-events-none' : ''}`}
               style={{ 
-                gridTemplateColumns: `repeat(${wordCols}, minmax(0, 1fr))`,
+                gridTemplateColumns: `repeat(${gameMode === 'teams' ? Math.max(4, wordCols) : wordCols}, minmax(0, 1fr))`,
                 width: '100%'
               }}
             >
@@ -2869,7 +4881,7 @@ export default function App() {
                       }
                       ${!foundData && specialType ? 'animate-pulse' : ''}
                     `}
-                    style={{ height: `${wordHeight}px` }}
+                    style={{ height: `${gameMode === 'teams' ? Math.min(wordHeight, 68) : wordHeight}px` }}
                   >
                     {specialType && !foundData && !isFrozen && (
                       <div className="absolute top-1 right-1 z-20">
@@ -3021,21 +5033,44 @@ export default function App() {
                     key={msg.id} 
                     className={`text-sm break-words border-b border-white/5 pb-2 last:border-0 transition-all ${
                       msg.isCorrect 
-                        ? 'bg-green-500/20 border-green-500/40 -mx-4 px-4 py-3 !border-y shadow-[0_0_15px_rgba(34,197,94,0.1)]' 
+                        ? msg.team === 'blue'
+                          ? 'bg-blue-600/20 border-blue-500/40 -mx-4 px-4 py-2.5 !border-y shadow-[0_0_15px_rgba(59,130,246,0.2)]'
+                          : msg.team === 'red'
+                            ? 'bg-red-600/20 border-red-500/40 -mx-4 px-4 py-2.5 !border-y shadow-[0_0_15px_rgba(239,68,68,0.2)]'
+                            : 'bg-green-500/20 border-green-500/40 -mx-4 px-4 py-2.5 !border-y shadow-[0_0_15px_rgba(34,197,94,0.1)]' 
                         : ''
                     }`}
                   >
                     <div className="inline-flex items-baseline flex-wrap gap-x-1.5">
+                      {msg.team === 'blue' && (
+                        <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/40 text-[8px] font-black uppercase tracking-wider">
+                          NIEBIESCY
+                        </span>
+                      )}
+                      {msg.team === 'red' && (
+                        <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/40 text-[8px] font-black uppercase tracking-wider">
+                          CZERWONI
+                        </span>
+                      )}
+                      {msg.team === 'spectator' && (
+                        <span className="px-1.5 py-0.5 rounded bg-white/5 text-white/40 border border-white/10 text-[8px] font-black uppercase tracking-wider">
+                          KIBIC
+                        </span>
+                      )}
                       <UserBadges username={msg.username} size="w-3.5 h-3.5" />
                       <span className="font-black text-sm" style={{ color: msg.color }}>{msg.username}:</span>
                       <span className={`${
                         msg.isCorrect 
-                          ? 'text-green-400 font-black tracking-tighter scale-110 origin-left inline-block' 
+                          ? msg.team === 'blue' 
+                            ? 'text-blue-300 font-black tracking-tight scale-105 origin-left inline-block' 
+                            : msg.team === 'red'
+                              ? 'text-red-300 font-black tracking-tight scale-105 origin-left inline-block'
+                              : 'text-green-400 font-black tracking-tighter scale-110 origin-left inline-block' 
                           : 'text-text-secondary'
                       } font-medium`}>
                         {msg.message}
                       </span>
-                      {msg.isCorrect && <Sparkles className="w-4 h-4 text-yellow-400 ml-2 animate-bounce" />}
+                      {msg.isCorrect && <Sparkles className="w-4 h-4 text-yellow-400 ml-1 animate-bounce" />}
                     </div>
                   </motion.div>
                 ))}
@@ -3066,121 +5101,6 @@ export default function App() {
       `}} />
 
       {renderGlobalOverlays()}
-
-      {/* Developer Debug Panel */}
-      {isDevAuthorized && (
-        <div className="fixed bottom-4 left-4 z-[9999] flex flex-col items-start gap-2">
-          <button 
-            onClick={() => setShowDevPanel(!showDevPanel)}
-            className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded-full shadow-lg border border-white/10 transition-all active:scale-95"
-            title="Developer Tools"
-          >
-            <Settings className={`w-5 h-5 ${showDevPanel ? 'rotate-90' : ''}`} />
-          </button>
-
-          <AnimatePresence>
-            {showDevPanel && (
-              <motion.div 
-                initial={{ opacity: 0, y: 20, scale: 0.9 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 20, scale: 0.9 }}
-                className="bg-neutral-900 border border-white/20 p-4 rounded-2xl shadow-2xl w-64 space-y-3 backdrop-blur-xl"
-              >
-                <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
-                  <span className="text-[10px] font-black tracking-widest text-white/50 uppercase">DEV TOOLS</span>
-                  <span className="text-[9px] font-mono text-white/30 uppercase">v{appVersion}</span>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[8px] font-bold text-white/40 uppercase">Master Word</span>
-                    <div className="bg-black/50 px-2 py-1 rounded text-xs font-mono text-yellow-500 flex justify-between items-center group overflow-hidden">
-                      <span className="whitespace-nowrap overflow-hidden text-ellipsis">{currentLevel.masterWord}</span>
-                      <span className="text-[8px] text-white/20 group-hover:text-white/40 shrink-0 ml-2">LEVEL {levelIndex + 1}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[8px] font-bold text-white/40 uppercase">Jump to Level</span>
-                    <div className="flex gap-2">
-                      <input 
-                        type="number" 
-                        min="1"
-                        placeholder="Lvl"
-                        className="w-full bg-black/50 px-2 py-1 rounded text-xs font-mono text-white border border-white/10"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            const val = parseInt((e.target as HTMLInputElement).value);
-                            if (!isNaN(val)) {
-                              const targetIdx = val - 1;
-                              setLevelIndex(targetIdx);
-                              setFoundWords([]);
-                              setTimeLeft(INITIAL_TIME);
-                              setShuffledLetters([]);
-                              lettersPoolRef.current = [];
-                              setHints({});
-                              setGameState('countdown');
-                              setCountdownValue(3);
-                              processedWordsInRoundRef.current.clear();
-                              foundLettersRef.current = 0;
-                              totalLettersRef.current = 0;
-                            }
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <button 
-                      onClick={() => {
-                        setTimeLeft(prev => prev + 30);
-                      }}
-                      className="flex items-center justify-center gap-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 py-2 rounded-xl text-[10px] font-bold uppercase transition-colors"
-                    >
-                      <Plus className="w-3 h-3" /> 30s
-                    </button>
-                    <button 
-                      onClick={() => {
-                        processRoundResults(true);
-                        setTimeout(nextLevel, 100);
-                      }}
-                      className="flex items-center justify-center gap-1.5 bg-green-600/20 hover:bg-green-600/30 text-green-400 py-2 rounded-xl text-[10px] font-bold uppercase transition-colors"
-                    >
-                      <FastForward className="w-3 h-3" /> Skip
-                    </button>
-                  </div>
-
-                  <button 
-                    onClick={() => {
-                      const unplayed = possibleAnswers.filter(w => !foundWords.some(fw => fw.word === w));
-                      if (unplayed.length > 0) {
-                        const nextWord = unplayed[0];
-                        // Simulate correct guess
-                        setFoundWords(prev => [...prev, { word: nextWord, user: 'DevTester', points: nextWord.length * 10 }]);
-                      }
-                    }}
-                    className="w-full flex items-center justify-center gap-1.5 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 py-2 rounded-xl text-[10px] font-bold uppercase transition-colors"
-                  >
-                    <Sparkles className="w-3 h-3" /> Force Guess
-                  </button>
-
-                  <button 
-                    onClick={() => {
-                      clearStats();
-                      exitToLobby();
-                      window.location.reload();
-                    }}
-                    className="w-full flex items-center justify-center gap-1.5 bg-red-600/20 hover:bg-red-600/30 text-accent-red py-2 rounded-xl text-[10px] font-bold uppercase transition-colors"
-                  >
-                    <RefreshCw className="w-3 h-3" /> Hard Reset
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      )}
     </div>
   );
 }
