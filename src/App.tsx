@@ -695,7 +695,6 @@ export default function App() {
           addDebugLog("Awarded BLUE TEAM MVP (+1)", { user: blueMvpUser, totalMvp: next[k].teamMvp, blueMvp: next[k].blueTeamMvp });
         }
 
-
         if (redMvpUser) {
           const k = redMvpUser.toLowerCase();
           const cur = next[k] || {
@@ -721,6 +720,7 @@ export default function App() {
           };
           addDebugLog("Awarded RED TEAM MVP (+1)", { user: redMvpUser, totalMvp: next[k].teamMvp, redMvp: next[k].redTeamMvp });
         }
+        
       }
 
       if (isSuccess || isTeamWin || isOngoingTeamMatch) {
@@ -1038,30 +1038,19 @@ export default function App() {
     const lastWord = currentLevel.masterWord;
     setPlayedMasterWords(prev => [...prev, lastWord]);
 
-    // Calculate level jump based on completion rate of the finished round (same as classic mode)
-    const answers = possibleAnswersRef.current;
-    const found = foundWordsRef.current;
-    const roundTotalLetters = answers.reduce((acc, word) => acc + word.length, 0);
-    const roundFoundLetters = found.reduce((acc, fw) => acc + fw.word.length, 0);
-    const rate = roundTotalLetters === 0 ? 0 : (roundFoundLetters / roundTotalLetters) * 100;
-    
-    let jump = 1;
-    if (rate >= 100) jump = 3;
-    else if (rate >= 85) jump = 2;
+    // Team mode always advances exactly one word/round. The completion-rate
+    // level-jump bonus is reserved for classic mode only.
+    const nextIdx = levelIndex + 1 >= levelSequence.length ? 0 : levelIndex + 1;
 
     addDebugLog("Transitioning to Next Team Round", {
       currentRound: teamRoundRef.current,
       nextRound: teamRoundRef.current + 1,
       currentLevelIndex: levelIndex,
-      jump,
-      rate,
+      nextLevelIndex: nextIdx,
       preservedRope: ropePositionRef.current
     });
 
-    const nextIdx = (levelIndex + jump) >= levelSequence.length 
-      ? 0 
-      : levelIndex + jump;
-    if (nextIdx === 0 && (levelIndex + jump) >= levelSequence.length) {
+    if (nextIdx === 0) {
       setLevelSequence(generateLevelSequence());
     }
     setLevelIndex(nextIdx);
@@ -1642,6 +1631,12 @@ export default function App() {
   }, [teamLobbyPlayers, blueTeam.length, redTeam.length]);
 
   const startTeamGame = useCallback(() => {
+    // Use the same Twitch connection gate as Classic mode.
+    if (!isConnected) {
+      showFeedback("NAJPIERW POŁĄCZ BOTA Z KONTEM TWITCH!", "error");
+      addDebugLog("Team game start blocked: Twitch disconnected", { channel: activeChannel });
+      return;
+    }
     addDebugLog("Starting Team Session", { blue: blueTeam.length, red: redTeam.length });
     setLevelSequence(generateLevelSequence());
     setLevelIndex(0);
@@ -1670,7 +1665,7 @@ export default function App() {
     setTimeLeft(INITIAL_TIME);
     setCountdownValue(5);
     setGameState('countdown');
-  }, [blueTeam.length, redTeam.length, generateLevelSequence, addDebugLog]);
+  }, [blueTeam.length, redTeam.length, generateLevelSequence, addDebugLog, isConnected, activeChannel, showFeedback]);
 
 
   const startGame = () => {
@@ -2767,33 +2762,35 @@ export default function App() {
                         <span className="text-[8px] font-bold text-white/40 uppercase">Master Word</span>
                         <div className="bg-black/50 px-2 py-1 rounded text-xs font-mono text-yellow-500 flex justify-between items-center group overflow-hidden">
                           <span className="whitespace-nowrap overflow-hidden text-ellipsis">{currentLevel.masterWord}</span>
-                          <span className="text-[8px] text-white/20 group-hover:text-white/40 shrink-0 ml-2">LEVEL {levelIndex + 1}</span>
+                          <span className="text-[8px] text-white/20 group-hover:text-white/40 shrink-0 ml-2">{gameMode === 'teams' ? `RUNDA ${teamRound}` : `LEVEL ${levelIndex + 1}`}</span>
                         </div>
                       </div>
 
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[8px] font-bold text-white/40 uppercase">Jump to Level</span>
-                        <div className="flex gap-2">
-                          <input 
-                            type="number" 
-                            min="1"
-                            placeholder="Lvl"
-                            className="w-full bg-black/50 px-2 py-1 rounded text-xs font-mono text-white border border-white/10"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                const val = parseInt((e.target as HTMLInputElement).value);
-                                if (!isNaN(val)) {
-                                  const targetIdx = val - 1;
-                                  setLevelIndex(targetIdx);
-                                  setFoundWords([]);
-                                  (e.target as HTMLInputElement).value = '';
-                                  showFeedback(`Skoczono do poziomu ${val}!`, "success");
+                      {gameMode !== 'teams' && (
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[8px] font-bold text-white/40 uppercase">Jump to Level</span>
+                          <div className="flex gap-2">
+                            <input 
+                              type="number" 
+                              min="1"
+                              placeholder="Lvl"
+                              className="w-full bg-black/50 px-2 py-1 rounded text-xs font-mono text-white border border-white/10"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const val = parseInt((e.target as HTMLInputElement).value);
+                                  if (!isNaN(val)) {
+                                    const targetIdx = val - 1;
+                                    setLevelIndex(targetIdx);
+                                    setFoundWords([]);
+                                    (e.target as HTMLInputElement).value = '';
+                                    showFeedback(`Skoczono do poziomu ${val}!`, "success");
+                                  }
                                 }
-                              }
-                            }}
-                          />
+                              }}
+                            />
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       <button 
                         onClick={() => {
@@ -3400,17 +3397,18 @@ export default function App() {
                       PRZETASUJ PONOWNIE
                     </button>
                     <button
-                      disabled={blueTeam.length === 0 || redTeam.length === 0}
+                      disabled={!isConnected || blueTeam.length === 0 || redTeam.length === 0}
                       onClick={startTeamGame}
+                      title={!isConnected ? "Najpierw połącz bota z kontem Twitch" : undefined}
                       className={`md:col-span-2 py-4 rounded-xl font-black text-sm tracking-[0.2em] uppercase transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-2
-                        ${blueTeam.length > 0 && redTeam.length > 0
+                        ${isConnected && blueTeam.length > 0 && redTeam.length > 0
                           ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white shadow-[0_0_25px_rgba(230,57,70,0.5)]'
                           : 'bg-neutral-800 text-neutral-600 cursor-not-allowed opacity-50'
                         }
                       `}
                     >
                       <Swords className="w-5 h-5 text-yellow-300" />
-                      START MECZU DRUŻYNOWEGO
+                      {!isConnected ? "POŁĄCZ BOTA Z TWITCH, ABY GRAĆ" : "START MECZU DRUŻYNOWEGO"}
                     </button>
                   </div>
                 </div>
@@ -3797,12 +3795,6 @@ export default function App() {
       const isMatchWon = teamMatchWinner === 'blue' || teamMatchWinner === 'red';
       const winner = teamMatchWinner;
 
-      const roundTotalLetters = possibleAnswers.reduce((acc, word) => acc + word.length, 0);
-      const roundFoundLetters = foundWords.reduce((acc, fw) => acc + fw.word.length, 0);
-      const teamRoundRate = roundTotalLetters === 0 ? 0 : (roundFoundLetters / roundTotalLetters) * 100;
-      let teamRoundJump = 1;
-      if (teamRoundRate >= 100) teamRoundJump = 3;
-      else if (teamRoundRate >= 85) teamRoundJump = 2;
 
       // Helper to identify player's team
       const getPlayerTeam = (username: string): 'blue' | 'red' | 'spectator' => {
@@ -3901,12 +3893,6 @@ export default function App() {
                     ŻADNA Z DRUŻYN NIE OSIĄGNĘŁA 100 PKT (BRAK K.O.). PUNKTY I POZYCJA LINY ZOSTAJĄ ZACHOWANE NA RUNDĘ {teamRound + 1}!
                     <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
                   </p>
-                  {teamRoundJump > 1 && (
-                    <div className="mt-2 inline-flex items-center gap-2 px-3.5 py-1 bg-yellow-500/20 border border-yellow-500/40 rounded-full text-yellow-300 text-xs font-black uppercase shadow-lg animate-pulse">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Świetna runda ({teamRoundRate.toFixed(0)}% liter)! W następnej rundzie skok o +{teamRoundJump} poziomy trudności!
-                    </div>
-                  )}
                 </>
               )}
             </div>
@@ -4295,16 +4281,18 @@ export default function App() {
                   onClick={nextTeamRound}
                   className="w-full bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white py-4 rounded-xl font-black tracking-[0.2em] uppercase transition-all shadow-[0_0_25px_rgba(168,85,247,0.4)] active:scale-95 flex items-center justify-center gap-3 text-sm cursor-pointer"
                 >
-                  <FastForward className="w-5 h-5 text-yellow-300 animate-pulse" />
-                  NASTĘPNA RUNDA {teamRound + 1} {teamRoundJump > 1 ? `(SKOK O +${teamRoundJump} POZIOMY! 🚀)` : ''} (LINA ZOSTAJE ➔)
+                  <FastForward className="w-5 h-5 text-yellow-300" />
+                  NASTĘPNA RUNDA {teamRound + 1} (LINA ZOSTAJE ➔)
                 </button>
               ) : (
                 <button 
+                  disabled={!isConnected}
                   onClick={startTeamGame}
-                  className="w-full bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white py-4 rounded-xl font-black tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2 text-sm cursor-pointer"
+                  title={!isConnected ? "Najpierw połącz bota z kontem Twitch" : undefined}
+                  className={`w-full py-4 rounded-xl font-black tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2 text-sm ${isConnected ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white cursor-pointer' : 'bg-neutral-800 text-neutral-600 opacity-50 cursor-not-allowed'}`}
                 >
                   <Swords className="w-5 h-5 text-yellow-300" />
-                  ZAGRAJ JESZCZE RAZ TYMI SAMYMI DRUŻYNAMI (START OD RUNDY 1)
+                  {isConnected ? "ZAGRAJ JESZCZE RAZ TYMI SAMYMI DRUŻYNAMI (START OD RUNDY 1)" : "POŁĄCZ BOTA Z TWITCH, ABY ZAGRAĆ PONOWNIE"}
                 </button>
               )}
               

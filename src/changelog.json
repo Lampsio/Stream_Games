@@ -1,4 +1,13 @@
 [
+    {
+    "version": "0.2.4",
+    "date": "2026-05-11",
+    "title": "Tryb Drużynowy i Nowe Menu",
+    "changes": [
+      "Wylączono Levelowanie w trybie drużynowym",
+      "Naprawiona zabezpieczenie łączenia się w trybie drużynowym"
+    ]
+},
   {
     "version": "0.2.3",
     "date": "2026-05-11",
