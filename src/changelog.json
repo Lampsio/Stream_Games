@@ -1,4 +1,11 @@
-[    {
+[{
+    "version": "0.2.6",
+    "date": "2026-09-11",
+    "title": "Tryb Drużynowy i Nowe Menu",
+    "changes": [
+      "Dodano możliwość częstotliwości pojawiania się Adrenaliny ustawiany przez Hosta"
+    ]
+},    {
     "version": "0.2.5",
     "date": "2026-09-11",
     "title": "Tryb Drużynowy i Nowe Menu",
