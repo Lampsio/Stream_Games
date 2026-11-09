@@ -176,6 +176,27 @@ export default function App() {
   // Tracks if an endangered team (<15%) forfeited their adrenaline by guessing another word
   const adrenalineForfeitedRef = useRef<{ blue: boolean; red: boolean }>({ blue: false, red: false });
 
+  // Host configuration for Adrenaline usage limit per team per match: '1' (default), '2', or 'unlimited' (zawsze)
+  const [adrenalineLimit, setAdrenalineLimit] = useState<'1' | '2' | 'unlimited'>(() => {
+    const saved = localStorage.getItem('adrenalineLimit');
+    if (saved === '1' || saved === '2' || saved === 'unlimited') return saved;
+    return '1';
+  });
+  useEffect(() => {
+    localStorage.setItem('adrenalineLimit', adrenalineLimit);
+  }, [adrenalineLimit]);
+  const adrenalineLimitRef = useRef(adrenalineLimit);
+  useEffect(() => {
+    adrenalineLimitRef.current = adrenalineLimit;
+  }, [adrenalineLimit]);
+
+  // Tracks successful adrenaline rescue hits used by each team in the current match
+  const [adrenalineUsedCount, setAdrenalineUsedCount] = useState<{ blue: number; red: number }>({ blue: 0, red: 0 });
+  const adrenalineUsedCountRef = useRef<{ blue: number; red: number }>({ blue: 0, red: 0 });
+  useEffect(() => {
+    adrenalineUsedCountRef.current = adrenalineUsedCount;
+  }, [adrenalineUsedCount]);
+
   const [teamScores, setTeamScores] = useState<{ blue: number; red: number }>({ blue: 0, red: 0 });
   const [teamPlayerStats, setTeamPlayerStats] = useState<Record<string, TeamMemberStat>>({});
   const [currentTeamStreak, setCurrentTeamStreak] = useState<{ team: 'blue' | 'red' | null; count: number }>({ team: null, count: 0 });
@@ -558,6 +579,8 @@ export default function App() {
     teamMvpAwardedRef.current = false;
     setActiveAdrenaline(null);
     adrenalineForfeitedRef.current = { blue: false, red: false };
+    setAdrenalineUsedCount({ blue: 0, red: 0 });
+    adrenalineUsedCountRef.current = { blue: 0, red: 0 };
     matchEndingRef.current = false;
     teamMatchWinnerRef.current = null;
     teamWinReasonRef.current = null;
@@ -649,6 +672,13 @@ export default function App() {
       return;
     }
 
+    // Check if team has already reached their Adrenaline limit for this match
+    const maxAllowed = adrenalineLimitRef.current === 'unlimited' ? Infinity : parseInt(adrenalineLimitRef.current, 10);
+    if (adrenalineUsedCountRef.current[endangeredTeam] >= maxAllowed) {
+      if (activeAdrenalineRef.current) setActiveAdrenaline(null);
+      return;
+    }
+
     // If this team already forfeited adrenaline during this danger period (by guessing another word), do not spawn!
     if (adrenalineForfeitedRef.current[endangeredTeam]) {
       if (activeAdrenalineRef.current) setActiveAdrenaline(null);
@@ -681,9 +711,12 @@ export default function App() {
         bonusPull: bonus
       });
       const teamLabel = endangeredTeam === 'blue' ? 'NIEBIESKICH' : 'CZERWONYCH';
-      showFeedback(`⚡ ALARM! POLE ADRENALINY DLA ${teamLabel} (<15%)! ZGADNIJ, ABY ODBIĆ LINĘ! ⚡`, endangeredTeam === 'blue' ? 'freeze' : 'hazard');
+      const maxUses = adrenalineLimitRef.current === 'unlimited' ? '∞' : adrenalineLimitRef.current;
+      const currentUse = adrenalineUsedCountRef.current[endangeredTeam] + 1;
+      const useLabel = adrenalineLimitRef.current === 'unlimited' ? '' : ` (Użycie ${currentUse}/${maxUses})`;
+      showFeedback(`⚡ ALARM! POLE ADRENALINY DLA ${teamLabel} (<15%)${useLabel}! ZGADNIJ, ABY ODBIĆ LINĘ! ⚡`, endangeredTeam === 'blue' ? 'freeze' : 'hazard');
     }
-  }, [ropePosition, gameState, gameMode, enableAdrenalineBonus, possibleAnswers, foundWords, currentLevel, showFeedback]);
+  }, [ropePosition, gameState, gameMode, enableAdrenalineBonus, adrenalineLimit, adrenalineUsedCount, possibleAnswers, foundWords, currentLevel, showFeedback]);
 
   // Logic for awarding round and session wins
   const processRoundResults = useCallback((isSuccess: boolean) => {
@@ -1587,6 +1620,16 @@ export default function App() {
                 isAdrenalineHit = true;
                 adrenalineBonusAmount = activeAdrenalineRef.current.bonusPull || 10;
                 basePull += adrenalineBonusAmount;
+
+                // Track successful Adrenaline rescue usage for this team
+                setAdrenalineUsedCount(prev => ({
+                  ...prev,
+                  [scoringTeam]: prev[scoringTeam] + 1
+                }));
+                adrenalineUsedCountRef.current = {
+                  ...adrenalineUsedCountRef.current,
+                  [scoringTeam]: adrenalineUsedCountRef.current[scoringTeam] + 1
+                };
               } else {
                 showFeedback(`⚠️ ${rawUser} PRZECHWYCIŁ POLE ADRENALINY PRZECIWNIKÓW!`, "hazard");
               }
@@ -1694,7 +1737,10 @@ export default function App() {
             const comboNote = newStreakCount >= 2 ? ` (COMBO x${newStreakCount}! 🔥)` : '';
             const tName = scoringTeam === 'blue' ? 'NIEBIESCY' : 'CZERWONI';
             if (isAdrenalineHit) {
-              showFeedback(`⚡ POTĘŻNE ODBICIE ADRENALINĄ! [${tName}] ${rawUser}: +${actualPull} PKT! ⚡`, "success");
+              const maxAllowed = adrenalineLimitRef.current === 'unlimited' ? Infinity : parseInt(adrenalineLimitRef.current, 10);
+              const remaining = maxAllowed === Infinity ? '∞' : Math.max(0, maxAllowed - adrenalineUsedCountRef.current[scoringTeam]);
+              const limitNote = maxAllowed === Infinity ? '' : remaining === 0 ? ' (Zużyto ostatni ratunek w meczu)' : ` (Pozostało użyć: ${remaining})`;
+              showFeedback(`⚡ POTĘŻNE ODBICIE ADRENALINĄ! [${tName}] ${rawUser}: +${actualPull} PKT!${limitNote} ⚡`, "success");
             } else if (adrenalineForfeitedThisGuess) {
               showFeedback(`⚠️ [${tName}] ${rawUser}: trafiono inne hasło – bonus Adrenaliny przepadł! (+${actualPull} PKT)${comboNote}`, "hazard");
             } else {
@@ -1881,6 +1927,8 @@ export default function App() {
     setActiveParasites({});
     setActiveAdrenaline(null);
     adrenalineForfeitedRef.current = { blue: false, red: false };
+    setAdrenalineUsedCount({ blue: 0, red: 0 });
+    adrenalineUsedCountRef.current = { blue: 0, red: 0 };
     matchEndingRef.current = false;
     teamMatchWinnerRef.current = null;
     teamWinReasonRef.current = null;
@@ -2496,7 +2544,7 @@ export default function App() {
                     {/* SECTION: ADRENALINA - BONUS OSTATNIEJ SZANSY */}
                     <div className="space-y-4 pt-4 border-t border-white/5">
                       <h3 className="text-xs font-black tracking-[0.3em] text-yellow-300 uppercase flex items-center gap-2">
-                        <FaTwitch className="w-4 h-4 text-yellow-300 fill-yellow-300" /> BONUS RATUNKOWY: ADRENALINA (POWRÓT Z KRAWĘDZI K.O.)
+                        <Zap className="w-4 h-4 text-yellow-300 fill-yellow-300" /> BONUS RATUNKOWY: ADRENALINA (POWRÓT Z KRAWĘDZI K.O.)
                       </h3>
                       <div className="bg-gradient-to-r from-blue-950/40 via-yellow-950/20 to-red-950/40 border-2 border-yellow-500/40 p-5 rounded-2xl flex flex-col gap-3 shadow-[0_0_20px_rgba(234,179,8,0.15)]">
                         <div className="flex items-center gap-3">
@@ -2508,7 +2556,7 @@ export default function App() {
                               SZANSA NA WIDOWISKOWE ODBICIE PRZY KRAWĘDZI K.O.!
                             </h4>
                             <p className="text-[10px] text-white/50 uppercase tracking-widest">
-                              Opcjonalne koło ratunkowe hosta • Aktywne tylko przy &lt;15% siły liny
+                              Koło ratunkowe hosta • Aktywne przy &lt;15% siły • Konfigurowalny limit użyć
                             </p>
                           </div>
                         </div>
@@ -2518,7 +2566,13 @@ export default function App() {
                           </p>
                           <ul className="list-disc list-inside space-y-1.5 pl-1 text-white/80">
                             <li>
-                              <span className="text-white font-bold">Decyzja Hosta (Przełącznik w Lobby):</span> Streamer może włączyć lub wyłączyć Bonus Adrenaliny w górnym pasku poczekalni drużynowej przed startem meczu.
+                              <span className="text-white font-bold">Limit użyć na mecz (Domyślnie 1x na grę):</span> Każda drużyna ma swój limit skutecznych użyć ratunku (domyślnie <span className="text-yellow-300 font-bold">1 raz na cały mecz</span>). Gdy drużyna trafi słowo Adrenaliny i odbije linę, jej limit zostaje zużyty i ratunek dla niej już się nie pojawi.
+                            </li>
+                            <li>
+                              <span className="text-white font-bold">Dopóki nie trafione – szansa trwa:</span> Jeśli zagrożona drużyna nie skorzysta z ratunku (np. trafi inne słowo powodujące zniknięcie pola w tej turze lub rywale je przechwycą), limit <span className="text-green-400 font-bold">NIE zostaje zużyty</span> – Adrenalina pojawi się ponownie przy kolejnym spadku poniżej 15%!
+                            </li>
+                            <li>
+                              <span className="text-white font-bold">Opcje Hosta w Lobby:</span> Streamer może włączyć/wyłączyć Adrenalinę oraz ustawić limit klikając w przycisk limitu: <span className="text-yellow-300 font-bold">1x NA MECZ</span>, <span className="text-yellow-300 font-bold">2x NA MECZ</span> lub <span className="text-yellow-300 font-bold">BEZ LIMITU (ZAWSZE)</span>.
                             </li>
                             <li>
                               <span className="text-white font-bold">Aktywne TYLKO przy &lt;15%:</span> Bonus pojawia się wyłącznie wtedy, gdy stan liny spadnie poniżej 15%. Jeśli drużyna odbije i osiągnie 15% lub więcej, pole Adrenaliny natychmiast znika!
@@ -2533,7 +2587,7 @@ export default function App() {
                               <span className="text-white font-bold">Potężny bonus odbicia (+10 PKT):</span> Trafienie wskazanego słowa przez zagrożoną drużynę dodaje <span className="text-green-400 font-bold">+10 dodatkowych punktów siły</span>, odrzucając linę daleko od strefy K.O.!
                             </li>
                             <li>
-                              <span className="text-white font-bold">Przechwycenie przez rywali:</span> Drużyna przeciwna może odgadnąć to hasło, neutralizując ratunek wroga.
+                              <span className="text-white font-bold">Przechwycenie przez rywali:</span> Drużyna przeciwna może odgadnąć to hasło, neutralizując ratunek wroga bez zużywania limitu zagrożonej drużyny.
                             </li>
                           </ul>
                         </div>
@@ -3479,43 +3533,51 @@ export default function App() {
                       </span>
                     </div>
 
-                    {/* Host Toggle: Bonus Adrenaliny */}
-                    <button
-                      onClick={() => setEnableAdrenalineBonus(prev => !prev)}
-                      type="button"
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all cursor-pointer select-none active:scale-95 ${
-                        enableAdrenalineBonus 
-                          ? 'bg-yellow-500/15 border-yellow-400/40 hover:bg-yellow-500/25 shadow-[0_0_15px_rgba(234,179,8,0.2)]' 
-                          : 'bg-white/5 border-white/10 hover:bg-white/10 opacity-70'
-                      }`}
-                      title={enableAdrenalineBonus ? "Bonus Adrenaliny WŁĄCZONY: losowe pole ratunkowe dla drużyny mającej <15% liny" : "Bonus Adrenaliny WYŁĄCZONY: brak dodatkowych pól ratunkowych"}
-                    >
-                      <div className={`p-1 rounded-lg ${enableAdrenalineBonus ? 'bg-yellow-400/25 text-yellow-300' : 'bg-white/10 text-white/40'}`}>
-                        <Zap className="w-3.5 h-3.5 fill-current" />
-                      </div>
-                      <div className="flex flex-col text-left">
-                        <span className="text-[10px] font-black uppercase text-white tracking-wider flex items-center gap-1.5">
-                          ADRENALINA (&lt;15%)
-                          <span className={`text-[8px] px-1.5 py-0.2 rounded font-mono font-bold ${enableAdrenalineBonus ? 'bg-yellow-400 text-black' : 'bg-white/20 text-white/60'}`}>
-                            {enableAdrenalineBonus ? 'WŁ' : 'WYŁ'}
-                          </span>
-                        </span>
-                        <span className="text-[8px] text-white/50 font-bold uppercase">
-                          {enableAdrenalineBonus ? 'Ratunek poniżej 15%' : 'Brak pól ratunkowych'}
-                        </span>
-                      </div>
-                      <div
-                        className={`ml-1 relative inline-flex h-4 w-7 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-                          enableAdrenalineBonus ? 'bg-yellow-400' : 'bg-white/20'
+                    {/* Host Settings: Bonus Adrenaliny + Limit Użyć */}
+                    <div className="flex items-center gap-2 bg-black/40 border border-white/10 p-1 rounded-xl">
+                      <button
+                        onClick={() => setEnableAdrenalineBonus(prev => !prev)}
+                        type="button"
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all cursor-pointer select-none active:scale-95 ${
+                          enableAdrenalineBonus 
+                            ? 'bg-yellow-500/15 border-yellow-400/40 hover:bg-yellow-500/25 shadow-[0_0_15px_rgba(234,179,8,0.2)]' 
+                            : 'bg-white/5 border-white/10 hover:bg-white/10 opacity-70'
                         }`}
+                        title={enableAdrenalineBonus ? "Bonus Adrenaliny WŁĄCZONY: losowe pole ratunkowe dla drużyny mającej <15% liny" : "Bonus Adrenaliny WYŁĄCZONY: brak dodatkowych pól ratunkowych"}
                       >
-                        <span
-                          className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-neutral-900 shadow ring-0 transition duration-200 ease-in-out ${
-                            enableAdrenalineBonus ? 'translate-x-3' : 'translate-x-0'
-                          }`}
-                        />
-                      </div>
-                    </button>
+                        <div className={`p-1 rounded-lg ${enableAdrenalineBonus ? 'bg-yellow-400/25 text-yellow-300' : 'bg-white/10 text-white/40'}`}>
+                          <Zap className="w-3.5 h-3.5 fill-current" />
+                        </div>
+                        <div className="flex flex-col text-left">
+                          <span className="text-[10px] font-black uppercase text-white tracking-wider flex items-center gap-1.5">
+                            ADRENALINA (&lt;15%)
+                            <span className={`text-[8px] px-1.5 py-0.2 rounded font-mono font-bold ${enableAdrenalineBonus ? 'bg-yellow-400 text-black' : 'bg-white/20 text-white/60'}`}>
+                              {enableAdrenalineBonus ? 'WŁ' : 'WYŁ'}
+                            </span>
+                          </span>
+                          <span className="text-[8px] text-white/50 font-bold uppercase">
+                            {enableAdrenalineBonus ? 'Ratunek poniżej 15%' : 'Brak pól ratunkowych'}
+                          </span>
+                        </div>
+                      </button>
+
+                      {enableAdrenalineBonus && (
+                        <button
+                          onClick={() => {
+                            setAdrenalineLimit(prev => prev === '1' ? '2' : prev === '2' ? 'unlimited' : '1');
+                          }}
+                          type="button"
+                          className="px-2.5 py-2 bg-yellow-400/15 hover:bg-yellow-400/25 border border-yellow-400/30 rounded-lg text-[9px] font-black text-yellow-300 uppercase transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-sm"
+                          title="Kliknij, aby przełączyć limit użyć ratunku na drużynę w całym meczu"
+                        >
+                          <span className="text-white/40 text-[8px] font-bold">LIMIT:</span>
+                          <span className="text-yellow-400 font-mono font-bold">
+                            {adrenalineLimit === '1' ? '1x NA MECZ' : adrenalineLimit === '2' ? '2x NA MECZ' : 'BEZ LIMITU'}
+                          </span>
+                          <RefreshCw className="w-2.5 h-2.5 text-yellow-400/70" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -4904,6 +4966,8 @@ export default function App() {
                   teamMvpAwardedRef.current = false;
                   setActiveAdrenaline(null);
                   adrenalineForfeitedRef.current = { blue: false, red: false };
+                  setAdrenalineUsedCount({ blue: 0, red: 0 });
+                  adrenalineUsedCountRef.current = { blue: 0, red: 0 };
                   matchEndingRef.current = false;
                   teamMatchWinnerRef.current = null;
                   teamWinReasonRef.current = null;
@@ -5242,7 +5306,10 @@ export default function App() {
                     }`}
                   >
                     <Zap className="w-3 h-3 text-yellow-300 fill-yellow-300 animate-bounce" />
-                    <span>ADRENALINA DLA {activeAdrenaline.team === 'blue' ? 'NIEBIESKICH' : 'CZERWONYCH'} (+{activeAdrenaline.bonusPull} PKT)!</span>
+                    <span>
+                      ADRENALINA DLA {activeAdrenaline.team === 'blue' ? 'NIEBIESKICH' : 'CZERWONYCH'} (+{activeAdrenaline.bonusPull} PKT)
+                      {adrenalineLimit !== 'unlimited' ? ` • UŻYCIE ${adrenalineUsedCount[activeAdrenaline.team] + 1}/${adrenalineLimit}` : ''}!
+                    </span>
                   </motion.div>
                 )}
                 {lastPullDelta && !activeAdrenaline && (
