@@ -1,4 +1,16 @@
-[
+[    {
+    "version": "0.2.5",
+    "date": "2026-09-11",
+    "title": "Tryb Drużynowy i Nowe Menu",
+    "changes": [
+      "Zmieniono sposób wyświetlania odpowowiedzi słówek według drużyny, dla niebieskiech jest to niebieski kolor, a dla czerwonych czerwony",
+      "Naprawiono błąd, który mogł powodować reagowanie bota na wychwytywanie słówek w trybie drużynowym po zakończeniu gry",
+      "Dodano nowy bonus w trybie drużynowym o nazwie 'Adrenalina', który jest swego rodzaju ratunkiem dla drużyny",
+      "Dodano możliwość włączenia lub wyłączenia bonusu 'Adrenalina' w głównym menu gry drużynowej ",
+      "Dodano możliwość przypisywania graczowi drużyny maualnie bez wcześniejszego losowania",
+      "Dodano możliwość przeniesienia gracza do lobby bez konieczności usuwania go z listy gry"
+    ]
+},
     {
     "version": "0.2.4",
     "date": "2026-05-11",

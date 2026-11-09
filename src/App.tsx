@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle, FastForward, Snowflake, Bug, Users, Swords, ArrowRight, ArrowLeft, Shuffle, UserPlus, Check, MoreVertical } from 'lucide-react';
+import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle, FastForward, Snowflake, Bug, Users, Swords, ArrowRight, ArrowLeft, Shuffle, UserPlus, Check, MoreVertical, Zap  } from 'lucide-react';
 import tmi from 'tmi.js';
 import confetti from 'canvas-confetti';
 import { check } from '@tauri-apps/plugin-updater';
@@ -47,6 +47,7 @@ interface FoundWord {
   word: string;
   user: string;
   points: number;
+  team?: 'blue' | 'red';
 }
 
 interface ChatLog {
@@ -126,7 +127,55 @@ export default function App() {
   const [teamLobbyPlayers, setTeamLobbyPlayers] = useState<string[]>([]);
   const [blueTeam, setBlueTeam] = useState<string[]>([]);
   const [redTeam, setRedTeam] = useState<string[]>([]);
+  const [lobbyContextMenu, setLobbyContextMenu] = useState<{
+    x: number;
+    y: number;
+    player: string;
+    source: 'unassigned' | 'blue' | 'red';
+  } | null>(null);
+
+  const unassignedPlayers = useMemo(() => {
+    const blueSet = new Set(blueTeam.map(p => p.toLowerCase()));
+    const redSet = new Set(redTeam.map(p => p.toLowerCase()));
+    return teamLobbyPlayers.filter(p => !blueSet.has(p.toLowerCase()) && !redSet.has(p.toLowerCase()));
+  }, [teamLobbyPlayers, blueTeam, redTeam]);
+
+  useEffect(() => {
+    if (!lobbyContextMenu) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLobbyContextMenu(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lobbyContextMenu]);
+
   const [ropePosition, setRopePosition] = useState<number>(50); // 50% = Środek, 0% = K.O. Niebiescy, 100% = K.O. Czerwoni
+  const [activeAdrenaline, setActiveAdrenaline] = useState<{ word: string; team: 'blue' | 'red'; bonusPull: number } | null>(null);
+  const activeAdrenalineRef = useRef<{ word: string; team: 'blue' | 'red'; bonusPull: number } | null>(null);
+  useEffect(() => {
+    activeAdrenalineRef.current = activeAdrenaline;
+  }, [activeAdrenaline]);
+
+  // Host toggle for Adrenaline rescue mechanic in team mode
+  const [enableAdrenalineBonus, setEnableAdrenalineBonus] = useState<boolean>(() => {
+    const saved = localStorage.getItem('enableAdrenalineBonus');
+    return saved !== null ? saved === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('enableAdrenalineBonus', String(enableAdrenalineBonus));
+  }, [enableAdrenalineBonus]);
+
+  const enableAdrenalineBonusRef = useRef(enableAdrenalineBonus);
+  useEffect(() => {
+    enableAdrenalineBonusRef.current = enableAdrenalineBonus;
+    if (!enableAdrenalineBonus && activeAdrenalineRef.current) {
+      setActiveAdrenaline(null);
+    }
+  }, [enableAdrenalineBonus]);
+
+  // Tracks if an endangered team (<15%) forfeited their adrenaline by guessing another word
+  const adrenalineForfeitedRef = useRef<{ blue: boolean; red: boolean }>({ blue: false, red: false });
+
   const [teamScores, setTeamScores] = useState<{ blue: number; red: number }>({ blue: 0, red: 0 });
   const [teamPlayerStats, setTeamPlayerStats] = useState<Record<string, TeamMemberStat>>({});
   const [currentTeamStreak, setCurrentTeamStreak] = useState<{ team: 'blue' | 'red' | null; count: number }>({ team: null, count: 0 });
@@ -185,7 +234,7 @@ export default function App() {
 
   // Audio Settings
   const [soundVolume, setSoundVolume] = useState(0.5);
-  const [musicVolume, setMusicVolume] = useState(0.3);
+  const [musicVolume, setMusicVolume] = useState(0.1);
   const [settingsTab, setSettingsTab] = useState<'audio' | 'layout' | 'twitch' | 'admin' | 'developer'>('audio');
   const [showSettings, setShowSettings] = useState(false);
   
@@ -507,6 +556,11 @@ export default function App() {
     setTeamWinReason(null);
     setLastPullDelta(null);
     teamMvpAwardedRef.current = false;
+    setActiveAdrenaline(null);
+    adrenalineForfeitedRef.current = { blue: false, red: false };
+    matchEndingRef.current = false;
+    teamMatchWinnerRef.current = null;
+    teamWinReasonRef.current = null;
   }, [generateLevelSequence]);
 
   // Use Refs for logic that needs stable values without re-triggering effects
@@ -535,6 +589,7 @@ export default function App() {
   const teamRoundRef = useRef(teamRound);
   const teamPlayerStatsRef = useRef(teamPlayerStats);
   const teamMvpAwardedRef = useRef(false);
+  const matchEndingRef = useRef(false);
 
   // Sync refs immediately in render
   gameStateRef.current = gameState;
@@ -560,6 +615,76 @@ export default function App() {
   const foundLettersRef = useRef(0);
   foundLettersRef.current = foundLettersInLevel;
 
+  // Adrenaline Rescue Mechanic (Bonus Ostatniej Szansy dla zagrożonej drużyny)
+  // Aktywny TYLKO gdy drużyna ma ściśle mniej niż 15% siły liny (<15 PKT) i włączony przez hosta.
+  // Jeśli drużyna odbije i ma >= 15%, bonus natychmiast znika.
+  // Jeśli drużyna mająca <15% trafi inne hasło, bonus przepada na czas trwania tego zagrożenia.
+  useEffect(() => {
+    if (gameState !== 'playing' || gameMode !== 'teams' || !enableAdrenalineBonus) {
+      if (activeAdrenalineRef.current) setActiveAdrenaline(null);
+      return;
+    }
+
+    // Determine if a team has strictly less than 15% rope strength
+    // Blue points = ropePosition (0 to 100). If ropePosition < 15, Blue is endangered (<15%)
+    // Red points = 100 - ropePosition (0 to 100). If ropePosition > 85, Red is endangered (<15%)
+    let endangeredTeam: 'blue' | 'red' | null = null;
+    if (ropePosition < 15) {
+      endangeredTeam = 'blue';
+    } else if (ropePosition > 85) {
+      endangeredTeam = 'red';
+    }
+
+    // Reset forfeiture flag if team recovered to 15% or more
+    if (ropePosition >= 15) {
+      adrenalineForfeitedRef.current.blue = false;
+    }
+    if (ropePosition <= 85) {
+      adrenalineForfeitedRef.current.red = false;
+    }
+
+    // If neither team is strictly < 15%, clear any active adrenaline immediately!
+    if (!endangeredTeam) {
+      if (activeAdrenalineRef.current) setActiveAdrenaline(null);
+      return;
+    }
+
+    // If this team already forfeited adrenaline during this danger period (by guessing another word), do not spawn!
+    if (adrenalineForfeitedRef.current[endangeredTeam]) {
+      if (activeAdrenalineRef.current) setActiveAdrenaline(null);
+      return;
+    }
+
+    // If an adrenaline word is already active for this team and still unsolved, keep it
+    if (activeAdrenalineRef.current && activeAdrenalineRef.current.team === endangeredTeam) {
+      const isStillUnsolved = possibleAnswers.includes(activeAdrenalineRef.current.word) &&
+        !foundWords.some(fw => fw.word === activeAdrenalineRef.current?.word);
+      if (isStillUnsolved) return;
+    }
+
+    // Find unrevealed / unsolved words
+    const solvedSet = new Set(foundWords.map(fw => fw.word));
+    const unsolvedWords = possibleAnswers.filter(w => !solvedSet.has(w));
+    if (unsolvedWords.length === 0) return;
+
+    // Pick a candidate word (prefer non-masterWord if possible)
+    const candidateWords = unsolvedWords.filter(w => w !== currentLevel?.masterWord);
+    const targetWord = candidateWords.length > 0 
+      ? candidateWords[Math.floor(Math.random() * candidateWords.length)] 
+      : unsolvedWords[Math.floor(Math.random() * unsolvedWords.length)];
+
+    if (targetWord) {
+      const bonus = 10;
+      setActiveAdrenaline({
+        word: targetWord,
+        team: endangeredTeam,
+        bonusPull: bonus
+      });
+      const teamLabel = endangeredTeam === 'blue' ? 'NIEBIESKICH' : 'CZERWONYCH';
+      showFeedback(`⚡ ALARM! POLE ADRENALINY DLA ${teamLabel} (<15%)! ZGADNIJ, ABY ODBIĆ LINĘ! ⚡`, endangeredTeam === 'blue' ? 'freeze' : 'hazard');
+    }
+  }, [ropePosition, gameState, gameMode, enableAdrenalineBonus, possibleAnswers, foundWords, currentLevel, showFeedback]);
+
   // Logic for awarding round and session wins
   const processRoundResults = useCallback((isSuccess: boolean) => {
     // ATOMIC GUARDS
@@ -574,6 +699,8 @@ export default function App() {
 
     let roundTeamWinner: 'blue' | 'red' | 'draw' | null = null;
     if (gameModeRef.current === 'teams') {
+      setActiveAdrenaline(null);
+      adrenalineForfeitedRef.current = { blue: false, red: false };
       let winner = teamMatchWinnerRef.current;
       let reason = teamWinReasonRef.current;
       if (!winner) {
@@ -599,6 +726,7 @@ export default function App() {
           teamWinReasonRef.current = null;
           setTeamMatchWinner(null);
           setTeamWinReason(null);
+          matchEndingRef.current = false;
         }
       }
       roundTeamWinner = winner;
@@ -1065,6 +1193,11 @@ export default function App() {
     setHints({});
     setFrozenWords({});
     setActiveParasites({});
+    setActiveAdrenaline(null);
+    adrenalineForfeitedRef.current = { blue: false, red: false };
+    matchEndingRef.current = false;
+    teamMatchWinnerRef.current = null;
+    teamWinReasonRef.current = null;
     setBlockedPlayer(null);
     setLastActionTime(Date.now());
     setTimeLeft(INITIAL_TIME);
@@ -1126,14 +1259,7 @@ export default function App() {
           if (prev.some(p => p.toLowerCase() === userKey)) return prev;
           return [...prev, rawUser];
         });
-        if (blueTeamRef.current.length > 0 || redTeamRef.current.length > 0) {
-          if (blueTeamRef.current.length <= redTeamRef.current.length) {
-            setBlueTeam(prev => prev.some(p => p.toLowerCase() === userKey) ? prev : [...prev, rawUser]);
-          } else {
-            setRedTeam(prev => prev.some(p => p.toLowerCase() === userKey) ? prev : [...prev, rawUser]);
-          }
-        }
-        showFeedback(`${rawUser} DOŁĄCZYŁ DO GRY! ⚔️`, "success");
+        showFeedback(`${rawUser} DOŁĄCZYŁ DO POCZEKALNI! ⚔️`, "success");
         return;
       }
     }
@@ -1187,9 +1313,12 @@ export default function App() {
       return;
     }
 
+    // Check if game or round is already locked / match won
+    const isGameplayLocked = awardProcessedRef.current || matchEndingRef.current || (gameModeRef.current === 'teams' && teamMatchWinnerRef.current !== null);
+
     // Check if correct before adding to log
     let isCorrectMessage = false;
-    if (gameStateRef.current === 'playing' && guess.length >= 3) {
+    if (gameStateRef.current === 'playing' && !isGameplayLocked && guess.length >= 3) {
       if (!processedWordsInRoundRef.current.has(guess) && possibleAnswersRef.current.includes(guess)) {
         isCorrectMessage = true;
       }
@@ -1207,6 +1336,7 @@ export default function App() {
     setMessages((prev) => [...prev, newMessage].slice(-50));
     
     if (gameStateRef.current === 'playing') {
+      if (isGameplayLocked) return;
       if (guess.length < 3) return;
 
       // Check if word is frozen
@@ -1427,7 +1557,8 @@ export default function App() {
         });
 
         // 4. Update round words
-        setFoundWords(prev => [...prev, { word: guess, user: rawUser, points: pointsToAdd }]);
+        const wordTeam = (userTeam === 'blue' || userTeam === 'red') ? userTeam : undefined;
+        setFoundWords(prev => [...prev, { word: guess, user: rawUser, points: pointsToAdd, team: wordTeam }]);
 
         // 5. Team Mode (Tug-of-War & Team Streaks)
         if (gameModeRef.current === 'teams') {
@@ -1444,6 +1575,29 @@ export default function App() {
           }
           if (specialType === 'GOLD') {
             basePull += 5;
+          }
+
+          let isAdrenalineHit = false;
+          let adrenalineBonusAmount = 0;
+          let adrenalineForfeitedThisGuess = false;
+
+          if (activeAdrenalineRef.current) {
+            if (activeAdrenalineRef.current.word === guess) {
+              if (activeAdrenalineRef.current.team === scoringTeam) {
+                isAdrenalineHit = true;
+                adrenalineBonusAmount = activeAdrenalineRef.current.bonusPull || 10;
+                basePull += adrenalineBonusAmount;
+              } else {
+                showFeedback(`⚠️ ${rawUser} PRZECHWYCIŁ POLE ADRENALINY PRZECIWNIKÓW!`, "hazard");
+              }
+              setActiveAdrenaline(null);
+            } else if (activeAdrenalineRef.current.team === scoringTeam) {
+              // The endangered team had an active Adrenaline rescue word, but guessed another word instead!
+              // The Adrenaline bonus is immediately forfeited and disappears.
+              adrenalineForfeitedRef.current[scoringTeam] = true;
+              setActiveAdrenaline(null);
+              adrenalineForfeitedThisGuess = true;
+            }
           }
           
           // Team Streak calculation (Combo Drużynowe)
@@ -1489,31 +1643,63 @@ export default function App() {
             ? Math.min(100, curRope + actualPull) 
             : Math.max(0, curRope - actualPull);
           nextRope = Number(nextRope.toFixed(1));
-          setRopePosition(nextRope);
-          setLastPullDelta({ team: scoringTeam, amount: actualPull, word: guess, user: rawUser });
 
-          // Check KO Instant Win (100 PKT)
+          // Check KO Instant Win (100 PKT for Blue, 0 PKT for Red)
           if (nextRope >= 100) {
+            nextRope = 100;
+            ropePositionRef.current = 100;
+            teamMatchWinnerRef.current = 'blue';
+            teamWinReasonRef.current = 'ko';
+            matchEndingRef.current = true;
+
             setTeamMatchWinner('blue');
             setTeamWinReason('ko');
+            setRopePosition(100);
+            setLastPullDelta({ team: scoringTeam, amount: actualPull, word: guess, user: rawUser });
+
             showFeedback(`🏆 K.O.! NIEBIESCY WYGRYWAJĄ MECZ (100 PKT)! 🏆`, "success");
             triggerConfetti(true);
             setTimeout(() => {
               processRoundResults(true);
             }, 1200);
           } else if (nextRope <= 0) {
+            nextRope = 0;
+            ropePositionRef.current = 0;
+            teamMatchWinnerRef.current = 'red';
+            teamWinReasonRef.current = 'ko';
+            matchEndingRef.current = true;
+
             setTeamMatchWinner('red');
             setTeamWinReason('ko');
+            setRopePosition(0);
+            setLastPullDelta({ team: scoringTeam, amount: actualPull, word: guess, user: rawUser });
+
             showFeedback(`🏆 K.O.! CZERWONI WYGRYWAJĄ MECZ (100 PKT)! 🏆`, "success");
             triggerConfetti(true);
             setTimeout(() => {
               processRoundResults(true);
             }, 1200);
           } else {
-            const bonusNote = isMaster ? ' [HASŁO GŁÓWNE +5]' : specialType === 'GOLD' ? ' [ZŁOTO +5]' : '';
+            // Synchronously update ropePositionRef so rapid consecutive messages calculate from the fresh position
+            ropePositionRef.current = nextRope;
+            setRopePosition(nextRope);
+            setLastPullDelta({ team: scoringTeam, amount: actualPull, word: guess, user: rawUser });
+            const bonusNote = isMaster 
+              ? ' [HASŁO GŁÓWNE +5]' 
+              : specialType === 'GOLD' 
+              ? ' [ZŁOTO +5]' 
+              : isAdrenalineHit 
+              ? ` [⚡ ADRENALINA +${adrenalineBonusAmount} PKT!]` 
+              : '';
             const comboNote = newStreakCount >= 2 ? ` (COMBO x${newStreakCount}! 🔥)` : '';
             const tName = scoringTeam === 'blue' ? 'NIEBIESCY' : 'CZERWONI';
-            showFeedback(`[${tName}] ${rawUser}: +${actualPull} PKT! (${guess.length}-lit.${bonusNote})${comboNote}`, "success");
+            if (isAdrenalineHit) {
+              showFeedback(`⚡ POTĘŻNE ODBICIE ADRENALINĄ! [${tName}] ${rawUser}: +${actualPull} PKT! ⚡`, "success");
+            } else if (adrenalineForfeitedThisGuess) {
+              showFeedback(`⚠️ [${tName}] ${rawUser}: trafiono inne hasło – bonus Adrenaliny przepadł! (+${actualPull} PKT)${comboNote}`, "hazard");
+            } else {
+              showFeedback(`[${tName}] ${rawUser}: +${actualPull} PKT! (${guess.length}-lit.${bonusNote})${comboNote}`, "success");
+            }
           }
         }
       }
@@ -1597,10 +1783,34 @@ export default function App() {
     const red = shuffled.slice(mid);
     setBlueTeam(blue);
     setRedTeam(red);
-    showFeedback("ROZLOSOWANO SKŁADY DRUŻYN!", "success");
-  }, [teamLobbyPlayers]);
+    showFeedback("ROZLOSOWANO SKŁADY DRUŻYN (50/50)!", "success");
+  }, [teamLobbyPlayers, showFeedback]);
+
+  const distributeUnassigned = useCallback(() => {
+    const blueSet = new Set(blueTeam.map(p => p.toLowerCase()));
+    const redSet = new Set(redTeam.map(p => p.toLowerCase()));
+    const unassigned = teamLobbyPlayers.filter(p => !blueSet.has(p.toLowerCase()) && !redSet.has(p.toLowerCase()));
+    if (unassigned.length === 0) return;
+
+    const shuffled = [...unassigned].sort(() => Math.random() - 0.5);
+    const newBlue = [...blueTeam];
+    const newRed = [...redTeam];
+
+    shuffled.forEach(player => {
+      if (newBlue.length <= newRed.length) {
+        newBlue.push(player);
+      } else {
+        newRed.push(player);
+      }
+    });
+
+    setBlueTeam(newBlue);
+    setRedTeam(newRed);
+    showFeedback(`Przydzielono ${unassigned.length} graczy z poczekalni!`, "success");
+  }, [teamLobbyPlayers, blueTeam, redTeam, showFeedback]);
 
   const movePlayerToTeam = useCallback((username: string, targetTeam: 'blue' | 'red') => {
+    setTeamLobbyPlayers(prev => prev.includes(username) ? prev : [...prev, username]);
     if (targetTeam === 'blue') {
       setRedTeam(prev => prev.filter(p => p !== username));
       setBlueTeam(prev => prev.includes(username) ? prev : [...prev, username]);
@@ -1609,6 +1819,19 @@ export default function App() {
       setRedTeam(prev => prev.includes(username) ? prev : [...prev, username]);
     }
   }, []);
+
+  const revertPlayerToLobby = useCallback((username: string) => {
+    setBlueTeam(prev => prev.filter(p => p !== username));
+    setRedTeam(prev => prev.filter(p => p !== username));
+    setTeamLobbyPlayers(prev => prev.includes(username) ? prev : [...prev, username]);
+    showFeedback(`${username} wycofany do poczekalni`, "success");
+  }, [showFeedback]);
+
+  const revertAllToLobby = useCallback(() => {
+    setBlueTeam([]);
+    setRedTeam([]);
+    showFeedback("Wszyscy gracze wycofani do poczekalni!", "success");
+  }, [showFeedback]);
 
   const removePlayerFromLobby = useCallback((username: string) => {
     setTeamLobbyPlayers(prev => prev.filter(p => p !== username));
@@ -1621,14 +1844,8 @@ export default function App() {
     const available = testNames.filter(n => !teamLobbyPlayers.includes(n));
     const newName = available.length > 0 ? available[0] : `Gracz_${teamLobbyPlayers.length + 1}`;
     setTeamLobbyPlayers(prev => [...prev, newName]);
-    if (blueTeam.length > 0 || redTeam.length > 0) {
-      if (blueTeam.length <= redTeam.length) {
-        setBlueTeam(prev => [...prev, newName]);
-      } else {
-        setRedTeam(prev => [...prev, newName]);
-      }
-    }
-  }, [teamLobbyPlayers, blueTeam.length, redTeam.length]);
+    showFeedback(`Dodano ${newName} do poczekalni`, "success");
+  }, [teamLobbyPlayers, showFeedback]);
 
   const startTeamGame = useCallback(() => {
     // Use the same Twitch connection gate as Classic mode.
@@ -1662,11 +1879,22 @@ export default function App() {
     setHints({});
     setFrozenWords({});
     setActiveParasites({});
+    setActiveAdrenaline(null);
+    adrenalineForfeitedRef.current = { blue: false, red: false };
+    matchEndingRef.current = false;
+    teamMatchWinnerRef.current = null;
+    teamWinReasonRef.current = null;
     setTimeLeft(INITIAL_TIME);
     setCountdownValue(5);
     setGameState('countdown');
   }, [blueTeam.length, redTeam.length, generateLevelSequence, addDebugLog, isConnected, activeChannel, showFeedback]);
 
+  const getPlayerTeam = useCallback((username: string): 'blue' | 'red' | 'spectator' => {
+    const u = username.toLowerCase();
+    if (blueTeam.some(p => p.toLowerCase() === u)) return 'blue';
+    if (redTeam.some(p => p.toLowerCase() === u)) return 'red';
+    return 'spectator';
+  }, [blueTeam, redTeam]);
 
   const startGame = () => {
     addDebugLog("Starting New Session", {});
@@ -2261,6 +2489,53 @@ export default function App() {
                               Najdłuższe hasło planszy daje <span className="text-white font-bold">potężne pchnięcie liny</span> dla drużyny, która je rozszyfruje, oraz prestiżowy punkt mistrzowski.
                             </p>
                           </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SECTION: ADRENALINA - BONUS OSTATNIEJ SZANSY */}
+                    <div className="space-y-4 pt-4 border-t border-white/5">
+                      <h3 className="text-xs font-black tracking-[0.3em] text-yellow-300 uppercase flex items-center gap-2">
+                        <FaTwitch className="w-4 h-4 text-yellow-300 fill-yellow-300" /> BONUS RATUNKOWY: ADRENALINA (POWRÓT Z KRAWĘDZI K.O.)
+                      </h3>
+                      <div className="bg-gradient-to-r from-blue-950/40 via-yellow-950/20 to-red-950/40 border-2 border-yellow-500/40 p-5 rounded-2xl flex flex-col gap-3 shadow-[0_0_20px_rgba(234,179,8,0.15)]">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-yellow-400/20 text-yellow-300 rounded-xl border border-yellow-400/40 shrink-0">
+                            <Zap className="w-6 h-6 text-yellow-300 fill-yellow-300 animate-pulse" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-yellow-400 uppercase tracking-wider">
+                              SZANSA NA WIDOWISKOWE ODBICIE PRZY KRAWĘDZI K.O.!
+                            </h4>
+                            <p className="text-[10px] text-white/50 uppercase tracking-widest">
+                              Opcjonalne koło ratunkowe hosta • Aktywne tylko przy &lt;15% siły liny
+                            </p>
+                          </div>
+                        </div>
+                        <div className="space-y-2 text-[11px] text-text-secondary leading-relaxed">
+                          <p>
+                            Gdy jedna z drużyn jest na skraju porażki i ma <span className="text-yellow-400 font-bold">mniej niż 15% siły liny</span>, na planszy może aktywować się ratunkowe <span className="text-white font-bold">Pole Adrenaliny</span>!
+                          </p>
+                          <ul className="list-disc list-inside space-y-1.5 pl-1 text-white/80">
+                            <li>
+                              <span className="text-white font-bold">Decyzja Hosta (Przełącznik w Lobby):</span> Streamer może włączyć lub wyłączyć Bonus Adrenaliny w górnym pasku poczekalni drużynowej przed startem meczu.
+                            </li>
+                            <li>
+                              <span className="text-white font-bold">Aktywne TYLKO przy &lt;15%:</span> Bonus pojawia się wyłącznie wtedy, gdy stan liny spadnie poniżej 15%. Jeśli drużyna odbije i osiągnie 15% lub więcej, pole Adrenaliny natychmiast znika!
+                            </li>
+                            <li>
+                              <span className="text-red-400 font-bold">Ryzyko – utrata po trafieniu INNEGO hasła:</span> Jeżeli zagrożona drużyna (&lt;15%) odgadnie jakiekolwiek inne słowo z planszy zamiast wskazanego ratunku, <span className="text-yellow-300 font-bold">bonus Adrenaliny natychmiast bezpowrotnie przepada i znika</span> na czas trwania tego zagrożenia!
+                            </li>
+                            <li>
+                              <span className="text-white font-bold">Miganie w barwach drużyny i znaczek ⚡:</span> Pole ratunkowe pulsuje neonową <span className="text-blue-400 font-bold">niebieską</span> lub <span className="text-red-400 font-bold">czerwoną obramówką</span> ze świecącym symbolem błyskawicy <span className="text-yellow-300 font-bold">⚡ ADRENALINA +10</span>.
+                            </li>
+                            <li>
+                              <span className="text-white font-bold">Potężny bonus odbicia (+10 PKT):</span> Trafienie wskazanego słowa przez zagrożoną drużynę dodaje <span className="text-green-400 font-bold">+10 dodatkowych punktów siły</span>, odrzucając linę daleko od strefy K.O.!
+                            </li>
+                            <li>
+                              <span className="text-white font-bold">Przechwycenie przez rywali:</span> Drużyna przeciwna może odgadnąć to hasło, neutralizując ratunek wroga.
+                            </li>
+                          </ul>
                         </div>
                       </div>
                     </div>
@@ -2947,6 +3222,10 @@ export default function App() {
                       <div className="grid grid-cols-2 gap-1.5">
                         <button 
                           onClick={() => {
+                            matchEndingRef.current = true;
+                            teamMatchWinnerRef.current = 'blue';
+                            teamWinReasonRef.current = 'ko';
+                            ropePositionRef.current = 100;
                             setRopePosition(100);
                             setTeamMatchWinner('blue');
                             setTeamWinReason('ko');
@@ -2959,6 +3238,10 @@ export default function App() {
                         </button>
                         <button 
                           onClick={() => {
+                            matchEndingRef.current = true;
+                            teamMatchWinnerRef.current = 'red';
+                            teamWinReasonRef.current = 'ko';
+                            ropePositionRef.current = 0;
                             setRopePosition(0);
                             setTeamMatchWinner('red');
                             setTeamWinReason('ko');
@@ -3182,17 +3465,57 @@ export default function App() {
 
                 {/* Streamer Quick Management Toolbar */}
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-5 pt-4 border-t border-white/10">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-white/70">
-                      ZAPISANYCH:
-                    </span>
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-black border ${
-                      teamLobbyPlayers.length >= 2 
-                        ? 'bg-green-500/20 text-green-400 border-green-500/30' 
-                        : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                    }`}>
-                      {teamLobbyPlayers.length} GRACZY
-                    </span>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-white/70">
+                        ZAPISANYCH:
+                      </span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-black border ${
+                        teamLobbyPlayers.length >= 2 
+                          ? 'bg-green-500/20 text-green-400 border-green-500/30' 
+                          : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                      }`}>
+                        {teamLobbyPlayers.length} GRACZY
+                      </span>
+                    </div>
+
+                    {/* Host Toggle: Bonus Adrenaliny */}
+                    <button
+                      onClick={() => setEnableAdrenalineBonus(prev => !prev)}
+                      type="button"
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all cursor-pointer select-none active:scale-95 ${
+                        enableAdrenalineBonus 
+                          ? 'bg-yellow-500/15 border-yellow-400/40 hover:bg-yellow-500/25 shadow-[0_0_15px_rgba(234,179,8,0.2)]' 
+                          : 'bg-white/5 border-white/10 hover:bg-white/10 opacity-70'
+                      }`}
+                      title={enableAdrenalineBonus ? "Bonus Adrenaliny WŁĄCZONY: losowe pole ratunkowe dla drużyny mającej <15% liny" : "Bonus Adrenaliny WYŁĄCZONY: brak dodatkowych pól ratunkowych"}
+                    >
+                      <div className={`p-1 rounded-lg ${enableAdrenalineBonus ? 'bg-yellow-400/25 text-yellow-300' : 'bg-white/10 text-white/40'}`}>
+                        <Zap className="w-3.5 h-3.5 fill-current" />
+                      </div>
+                      <div className="flex flex-col text-left">
+                        <span className="text-[10px] font-black uppercase text-white tracking-wider flex items-center gap-1.5">
+                          ADRENALINA (&lt;15%)
+                          <span className={`text-[8px] px-1.5 py-0.2 rounded font-mono font-bold ${enableAdrenalineBonus ? 'bg-yellow-400 text-black' : 'bg-white/20 text-white/60'}`}>
+                            {enableAdrenalineBonus ? 'WŁ' : 'WYŁ'}
+                          </span>
+                        </span>
+                        <span className="text-[8px] text-white/50 font-bold uppercase">
+                          {enableAdrenalineBonus ? 'Ratunek poniżej 15%' : 'Brak pól ratunkowych'}
+                        </span>
+                      </div>
+                      <div
+                        className={`ml-1 relative inline-flex h-4 w-7 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                          enableAdrenalineBonus ? 'bg-yellow-400' : 'bg-white/20'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-neutral-900 shadow ring-0 transition duration-200 ease-in-out ${
+                            enableAdrenalineBonus ? 'translate-x-3' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -3226,9 +3549,14 @@ export default function App() {
               {blueTeam.length === 0 && redTeam.length === 0 ? (
                 /* WAITING POOL (Not yet shuffled) */
                 <div className="w-full bg-bg-card border border-border-color rounded-2xl p-6 shadow-2xl flex flex-col items-center">
-                  <span className="text-[10px] font-black tracking-widest text-text-secondary uppercase mb-4">
-                    LISTA GRACZY W POCZEKALNI:
-                  </span>
+                  <div className="w-full flex items-center justify-between mb-4">
+                    <span className="text-[10px] font-black tracking-widest text-text-secondary uppercase">
+                      LISTA GRACZY W POCZEKALNI:
+                    </span>
+                    <span className="text-[10px] font-bold text-yellow-400/80 bg-yellow-400/10 px-2 py-0.5 rounded border border-yellow-400/20">
+                      PRAWY KLIK = PRZYDZIAŁ DO DRUŻYNY
+                    </span>
+                  </div>
 
                   {teamLobbyPlayers.length === 0 ? (
                     <div className="py-12 flex flex-col items-center justify-center text-center text-white/30 space-y-2">
@@ -3243,23 +3571,68 @@ export default function App() {
                       </p>
                     </div>
                   ) : (
-                    <div className="flex flex-wrap justify-center gap-2 mb-6 max-h-48 overflow-y-auto p-2 w-full custom-scrollbar">
-                      {teamLobbyPlayers.map((player) => (
-                        <div 
-                          key={player}
-                          className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-xl flex items-center gap-2 group hover:border-white/20"
-                        >
-                          <span className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_#4ade80]" />
-                          <span className="text-xs font-bold text-white">{player}</span>
-                          <button 
-                            onClick={() => removePlayerFromLobby(player)}
-                            className="opacity-40 group-hover:opacity-100 hover:text-red-400 transition-opacity ml-1"
+                    <>
+                      <div className="flex flex-wrap justify-center gap-2 mb-3 max-h-56 overflow-y-auto p-2 w-full custom-scrollbar">
+                        {teamLobbyPlayers.map((player) => (
+                          <div 
+                            key={player}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              setLobbyContextMenu({
+                                x: e.clientX,
+                                y: e.clientY,
+                                player,
+                                source: 'unassigned'
+                              });
+                            }}
+                            className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-yellow-500/40 rounded-xl flex items-center gap-2 group transition-all select-none shadow-sm cursor-context-menu"
+                            title="Prawy klik: wybierz drużynę"
                           >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                            <span className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_#4ade80]" />
+                            <span className="text-xs font-bold text-white">{player}</span>
+                            <div className="flex items-center gap-1 ml-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  movePlayerToTeam(player, 'blue');
+                                  showFeedback(`${player} przydzielony do Niebieskich!`, "success");
+                                }}
+                                title="Przydziel do Drużyny Niebieskiej"
+                                className="p-1 text-blue-400 hover:text-white hover:bg-blue-600/40 rounded transition-all cursor-pointer"
+                              >
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  movePlayerToTeam(player, 'red');
+                                  showFeedback(`${player} przydzielony do Czerwonych!`, "success");
+                                }}
+                                title="Przydziel do Drużyny Czerwonej"
+                                className="p-1 text-red-400 hover:text-white hover:bg-red-600/40 rounded transition-all cursor-pointer"
+                              >
+                                <Flame className="w-3.5 h-3.5" />
+                              </button>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removePlayerFromLobby(player);
+                                }}
+                                title="Usuń z gry"
+                                className="p-1 text-white/40 hover:text-red-400 transition-colors cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <p className="text-[10px] text-white/40 mb-4 flex items-center gap-1.5 text-center">
+                        <Lightbulb className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                        <span>Kliknij prawym przyciskiem myszy na gracza lub użyj ikon przy nicku, aby ręcznie przypisać do drużyny!</span>
+                      </p>
+                    </>
                   )}
 
                   <button
@@ -3267,7 +3640,7 @@ export default function App() {
                     onClick={shuffleTeams}
                     className={`w-full py-4 rounded-xl font-black text-xs tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2
                       ${teamLobbyPlayers.length >= 2 
-                        ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white shadow-[0_0_20px_rgba(147,51,234,0.4)]' 
+                        ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white shadow-[0_0_20px_rgba(147,51,234,0.4)] cursor-pointer' 
                         : 'bg-neutral-800 text-neutral-600 cursor-not-allowed opacity-50'
                       }
                     `}
@@ -3295,6 +3668,91 @@ export default function App() {
               ) : (
                 /* TEAMS DIVIDED VIEW (Roster cards) */
                 <div className="w-full flex flex-col gap-4">
+                  {/* Dedicated Unassigned / Poczekalnia Section if there are unassigned players */}
+                  {unassignedPlayers.length > 0 && (
+                    <div className="w-full bg-neutral-900/90 border-2 border-yellow-500/40 rounded-2xl p-4 shadow-xl flex flex-col backdrop-blur-md">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-3 border-b border-yellow-500/20">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-lg bg-yellow-500/20 border border-yellow-500/40 flex items-center justify-center text-yellow-400">
+                            <Users className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="font-black text-yellow-400 tracking-wider text-xs uppercase">
+                            POCZEKALNIA / NIEPRZYDZIELENI GRACZE ({unassignedPlayers.length})
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-white/50 hidden sm:inline">
+                            Prawy klik na nick = menu przydziału
+                          </span>
+                          <button
+                            onClick={distributeUnassigned}
+                            className="px-2.5 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/40 rounded-lg text-[10px] font-black text-yellow-300 hover:text-yellow-200 transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                            title="Rozlosuj tylko graczy z poczekalni po równo do Niebieskich i Czerwonych"
+                          >
+                            <Shuffle className="w-3 h-3" />
+                            ROZLOSUJ POZOSTAŁYCH
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-1 custom-scrollbar">
+                        {unassignedPlayers.map((player) => (
+                          <div 
+                            key={player}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              setLobbyContextMenu({
+                                x: e.clientX,
+                                y: e.clientY,
+                                player,
+                                source: 'unassigned'
+                              });
+                            }}
+                            className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-yellow-500/40 rounded-xl flex items-center gap-2 group transition-all select-none shadow-sm cursor-context-menu"
+                            title="Prawy klik: wybierz drużynę"
+                          >
+                            <span className="w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_6px_#facc15]" />
+                            <span className="text-xs font-bold text-white">{player}</span>
+                            <div className="flex items-center gap-1 ml-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  movePlayerToTeam(player, 'blue');
+                                  showFeedback(`${player} przydzielony do Niebieskich!`, "success");
+                                }}
+                                title="Przydziel do Drużyny Niebieskiej"
+                                className="p-1 text-blue-400 hover:text-white hover:bg-blue-600/40 rounded transition-all cursor-pointer"
+                              >
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  movePlayerToTeam(player, 'red');
+                                  showFeedback(`${player} przydzielony do Czerwonych!`, "success");
+                                }}
+                                title="Przydziel do Drużyny Czerwonej"
+                                className="p-1 text-red-400 hover:text-white hover:bg-red-600/40 rounded transition-all cursor-pointer"
+                              >
+                                <Flame className="w-3.5 h-3.5" />
+                              </button>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removePlayerFromLobby(player);
+                                }}
+                                title="Usuń całkowicie"
+                                className="p-1 text-white/40 hover:text-red-400 transition-colors cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Blue Team Column */}
                     <div className="bg-blue-950/20 border-2 border-blue-500/40 rounded-2xl p-5 shadow-2xl flex flex-col backdrop-blur-md">
@@ -3316,22 +3774,39 @@ export default function App() {
                         {blueTeam.map((player) => (
                           <div 
                             key={player}
-                            className="flex items-center justify-between bg-blue-900/30 hover:bg-blue-900/50 border border-blue-500/20 px-3 py-2 rounded-xl transition-colors group"
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              setLobbyContextMenu({
+                                x: e.clientX,
+                                y: e.clientY,
+                                player,
+                                source: 'blue'
+                              });
+                            }}
+                            className="flex items-center justify-between bg-blue-900/30 hover:bg-blue-900/50 border border-blue-500/20 px-3 py-2 rounded-xl transition-colors group select-none"
                           >
-                            <span className="text-xs font-bold text-white truncate max-w-[150px]">{player}</span>
+                            <span className="text-xs font-bold text-white truncate max-w-[130px]">{player}</span>
                             <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => revertPlayerToLobby(player)}
+                                title="Wycofaj do poczekalni (lobby)"
+                                className="px-2 py-1 bg-white/5 hover:bg-yellow-500/25 text-yellow-300 hover:text-yellow-100 border border-yellow-500/20 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1 cursor-pointer"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                <span>Do poczekalni</span>
+                              </button>
                               <button
                                 onClick={() => movePlayerToTeam(player, 'red')}
                                 title="Przenieś do Czerwonych"
-                                className="px-2 py-1 bg-white/5 hover:bg-red-600/40 text-blue-300 hover:text-white rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1"
+                                className="px-2 py-1 bg-white/5 hover:bg-red-600/40 text-blue-300 hover:text-white rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1 cursor-pointer"
                               >
                                 <span>Do Czerwonych</span>
                                 <ArrowRight className="w-3 h-3" />
                               </button>
                               <button
                                 onClick={() => removePlayerFromLobby(player)}
-                                title="Usuń"
-                                className="p-1 text-white/40 hover:text-red-400 transition-colors"
+                                title="Usuń całkowicie"
+                                className="p-1 text-white/40 hover:text-red-400 transition-colors cursor-pointer"
                               >
                                 <X className="w-3.5 h-3.5" />
                               </button>
@@ -3361,22 +3836,39 @@ export default function App() {
                         {redTeam.map((player) => (
                           <div 
                             key={player}
-                            className="flex items-center justify-between bg-red-900/30 hover:bg-red-900/50 border border-red-500/20 px-3 py-2 rounded-xl transition-colors group"
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              setLobbyContextMenu({
+                                x: e.clientX,
+                                y: e.clientY,
+                                player,
+                                source: 'red'
+                              });
+                            }}
+                            className="flex items-center justify-between bg-red-900/30 hover:bg-red-900/50 border border-red-500/20 px-3 py-2 rounded-xl transition-colors group select-none"
                           >
-                            <span className="text-xs font-bold text-white truncate max-w-[150px]">{player}</span>
+                            <span className="text-xs font-bold text-white truncate max-w-[130px]">{player}</span>
                             <div className="flex items-center gap-1">
                               <button
                                 onClick={() => movePlayerToTeam(player, 'blue')}
                                 title="Przenieś do Niebieskich"
-                                className="px-2 py-1 bg-white/5 hover:bg-blue-600/40 text-red-300 hover:text-white rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1"
+                                className="px-2 py-1 bg-white/5 hover:bg-blue-600/40 text-red-300 hover:text-white rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1 cursor-pointer"
                               >
                                 <ArrowLeft className="w-3 h-3" />
                                 <span>Do Niebieskich</span>
                               </button>
                               <button
+                                onClick={() => revertPlayerToLobby(player)}
+                                title="Wycofaj do poczekalni (lobby)"
+                                className="px-2 py-1 bg-white/5 hover:bg-yellow-500/25 text-yellow-300 hover:text-yellow-100 border border-yellow-500/20 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1 cursor-pointer"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                <span>Do poczekalni</span>
+                              </button>
+                              <button
                                 onClick={() => removePlayerFromLobby(player)}
-                                title="Usuń"
-                                className="p-1 text-white/40 hover:text-red-400 transition-colors"
+                                title="Usuń całkowicie"
+                                className="p-1 text-white/40 hover:text-red-400 transition-colors cursor-pointer"
                               >
                                 <X className="w-3.5 h-3.5" />
                               </button>
@@ -3388,21 +3880,29 @@ export default function App() {
                   </div>
 
                   {/* Actions Row */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                     <button
                       onClick={shuffleTeams}
-                      className="py-3 px-4 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all border border-white/10 flex items-center justify-center gap-2"
+                      className="py-3 px-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all border border-white/10 flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <Shuffle className="w-4 h-4 text-yellow-400" />
-                      PRZETASUJ PONOWNIE
+                      <Shuffle className="w-4 h-4 text-yellow-400 shrink-0" />
+                      <span>PRZETASUJ (50/50)</span>
+                    </button>
+                    <button
+                      onClick={revertAllToLobby}
+                      title="Wycofaj wszystkich z drużyn z powrotem do poczekalni bez usuwania graczy"
+                      className="py-3 px-3 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 hover:text-yellow-200 rounded-xl text-xs font-black uppercase tracking-wider transition-all border border-yellow-500/20 flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <RotateCcw className="w-4 h-4 text-yellow-400 shrink-0" />
+                      <span>DO POCZEKALNI</span>
                     </button>
                     <button
                       disabled={!isConnected || blueTeam.length === 0 || redTeam.length === 0}
                       onClick={startTeamGame}
                       title={!isConnected ? "Najpierw połącz bota z kontem Twitch" : undefined}
-                      className={`md:col-span-2 py-4 rounded-xl font-black text-sm tracking-[0.2em] uppercase transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-2
+                      className={`sm:col-span-2 md:col-span-2 py-3.5 rounded-xl font-black text-sm tracking-[0.2em] uppercase transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-2
                         ${isConnected && blueTeam.length > 0 && redTeam.length > 0
-                          ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white shadow-[0_0_25px_rgba(230,57,70,0.5)]'
+                          ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white shadow-[0_0_25px_rgba(230,57,70,0.5)] cursor-pointer'
                           : 'bg-neutral-800 text-neutral-600 cursor-not-allowed opacity-50'
                         }
                       `}
@@ -3413,6 +3913,94 @@ export default function App() {
                   </div>
                 </div>
               )}
+
+              {/* Context Menu for Lobby & Team Players (Right-click menu) */}
+              <AnimatePresence>
+                {lobbyContextMenu && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-[100]"
+                      onClick={() => setLobbyContextMenu(null)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setLobbyContextMenu(null);
+                      }}
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.12 }}
+                      style={{
+                        left: Math.min(lobbyContextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 230),
+                        top: Math.min(lobbyContextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 190),
+                      }}
+                      className="fixed z-[101] w-56 bg-[#18181c] border border-white/20 rounded-xl shadow-[0_12px_36px_rgba(0,0,0,0.85)] p-1.5 flex flex-col gap-1 backdrop-blur-xl"
+                    >
+                      <div className="px-3 py-1.5 border-b border-white/10 flex items-center justify-between">
+                        <span className="text-xs font-black text-white truncate max-w-[130px]">{lobbyContextMenu.player}</span>
+                        <span className="text-[9px] font-bold text-white/40 uppercase">
+                          {lobbyContextMenu.source === 'unassigned' ? 'POCZEKALNIA' : lobbyContextMenu.source === 'blue' ? 'NIEBIESCY' : 'CZERWONI'}
+                        </span>
+                      </div>
+
+                      {lobbyContextMenu.source !== 'blue' && (
+                        <button
+                          onClick={() => {
+                            movePlayerToTeam(lobbyContextMenu.player, 'blue');
+                            setLobbyContextMenu(null);
+                            showFeedback(`${lobbyContextMenu.player} przydzielony do Drużyny Niebieskiej!`, "success");
+                          }}
+                          className="w-full px-3 py-2 text-left text-xs font-bold text-blue-400 hover:text-white hover:bg-blue-600/30 rounded-lg flex items-center gap-2 transition-colors cursor-pointer"
+                        >
+                          <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0" />
+                          <span>{lobbyContextMenu.source === 'red' ? 'Przenieś do Niebieskich' : 'Przydziel do Niebieskich'}</span>
+                        </button>
+                      )}
+
+                      {lobbyContextMenu.source !== 'red' && (
+                        <button
+                          onClick={() => {
+                            movePlayerToTeam(lobbyContextMenu.player, 'red');
+                            setLobbyContextMenu(null);
+                            showFeedback(`${lobbyContextMenu.player} przydzielony do Drużyny Czerwonej!`, "success");
+                          }}
+                          className="w-full px-3 py-2 text-left text-xs font-bold text-red-400 hover:text-white hover:bg-red-600/30 rounded-lg flex items-center gap-2 transition-colors cursor-pointer"
+                        >
+                          <Flame className="w-4 h-4 text-red-400 shrink-0" />
+                          <span>{lobbyContextMenu.source === 'blue' ? 'Przenieś do Czerwonych' : 'Przydziel do Czerwonych'}</span>
+                        </button>
+                      )}
+
+                      {lobbyContextMenu.source !== 'unassigned' && (
+                        <button
+                          onClick={() => {
+                            revertPlayerToLobby(lobbyContextMenu.player);
+                            setLobbyContextMenu(null);
+                          }}
+                          className="w-full px-3 py-2 text-left text-xs font-bold text-yellow-400 hover:text-white hover:bg-yellow-500/20 rounded-lg flex items-center gap-2 transition-colors cursor-pointer"
+                        >
+                          <RotateCcw className="w-4 h-4 text-yellow-400 shrink-0" />
+                          <span>Wycofaj do poczekalni</span>
+                        </button>
+                      )}
+
+                      <div className="h-[1px] bg-white/10 my-0.5" />
+                      <button
+                        onClick={() => {
+                          removePlayerFromLobby(lobbyContextMenu.player);
+                          setLobbyContextMenu(null);
+                          showFeedback(`${lobbyContextMenu.player} usunięty z gry`, "hazard");
+                        }}
+                        className="w-full px-3 py-2 text-left text-xs font-bold text-neutral-400 hover:text-red-400 hover:bg-red-500/20 rounded-lg flex items-center gap-2 transition-colors cursor-pointer"
+                      >
+                        <X className="w-4 h-4 text-red-400 shrink-0" />
+                        <span>Usuń całkowicie</span>
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
 
               {/* Team Mode Bottom Navigation Bar */}
               <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
@@ -4314,6 +4902,11 @@ export default function App() {
                   setTeamWinReason(null);
                   setLastPullDelta(null);
                   teamMvpAwardedRef.current = false;
+                  setActiveAdrenaline(null);
+                  adrenalineForfeitedRef.current = { blue: false, red: false };
+                  matchEndingRef.current = false;
+                  teamMatchWinnerRef.current = null;
+                  teamWinReasonRef.current = null;
                 }}
                 className="w-full bg-white/5 hover:bg-white/10 text-white border border-white/10 py-3.5 rounded-xl font-black tracking-widest text-xs uppercase transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
@@ -4637,7 +5230,22 @@ export default function App() {
                   <Swords className="w-3.5 h-3.5 text-yellow-400" />
                   <span>PRZECIĄGANIE LINY • START: 50 / 50 PKT</span>
                 </div>
-                {lastPullDelta && (
+                {activeAdrenaline && (
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: [1, 1.05, 1], opacity: 1 }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                    className={`mt-0.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 border shadow-lg ${
+                      activeAdrenaline.team === 'blue'
+                        ? 'bg-blue-600/30 text-blue-300 border-blue-400/50 shadow-[0_0_12px_rgba(59,130,246,0.6)]'
+                        : 'bg-red-600/30 text-red-300 border-red-400/50 shadow-[0_0_12px_rgba(239,68,68,0.6)]'
+                    }`}
+                  >
+                    <Zap className="w-3 h-3 text-yellow-300 fill-yellow-300 animate-bounce" />
+                    <span>ADRENALINA DLA {activeAdrenaline.team === 'blue' ? 'NIEBIESKICH' : 'CZERWONYCH'} (+{activeAdrenaline.bonusPull} PKT)!</span>
+                  </motion.div>
+                )}
+                {lastPullDelta && !activeAdrenaline && (
                   <motion.div
                     key={`${lastPullDelta.user}-${lastPullDelta.amount}-${Date.now()}`}
                     initial={{ scale: 0.8, opacity: 0, y: -4 }}
@@ -4863,6 +5471,11 @@ export default function App() {
                 const revealedIndices = hints[word] || [];
                 const specialType = specialWords[word];
                 const isFrozen = frozenWords[word] && Date.now() < frozenWords[word];
+                const solverTeam = (gameMode === 'teams' && foundData) 
+                  ? (foundData.team || getPlayerTeam(foundData.user)) 
+                  : null;
+                const isAdrenaline = Boolean(gameMode === 'teams' && activeAdrenaline && activeAdrenaline.word === word && !foundData);
+                const adrenalineTeam = isAdrenaline ? activeAdrenaline?.team : null;
                 
                 return (
                   <motion.div
@@ -4874,7 +5487,17 @@ export default function App() {
                     }}
                     className={`relative flex flex-col items-center justify-center rounded-xl border-2 transition-all duration-300 px-3
                       ${foundData 
-                        ? 'bg-accent-red border-accent-red text-white shadow-[0_0_20px_rgba(230,57,70,0.3)]' 
+                        ? gameMode === 'teams'
+                          ? solverTeam === 'blue'
+                            ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_20px_rgba(37,99,235,0.45)]'
+                            : solverTeam === 'red'
+                            ? 'bg-red-600 border-red-400 text-white shadow-[0_0_20px_rgba(239,68,68,0.45)]'
+                            : 'bg-accent-red border-accent-red text-white shadow-[0_0_20px_rgba(230,57,70,0.3)]'
+                          : 'bg-accent-red border-accent-red text-white shadow-[0_0_20px_rgba(230,57,70,0.3)]' 
+                        : isAdrenaline
+                        ? adrenalineTeam === 'blue'
+                          ? 'bg-blue-950/70 border-blue-400 shadow-[0_0_25px_rgba(59,130,246,0.85)] ring-2 ring-blue-400 animate-pulse'
+                          : 'bg-red-950/70 border-red-400 shadow-[0_0_25px_rgba(239,68,68,0.85)] ring-2 ring-red-400 animate-pulse'
                         : isFrozen ? 'bg-blue-500/20 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]'
                         : specialType === 'PARASITE' ? 'bg-purple-500/20 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.5)]'
                         : specialType === 'FREEZE' ? 'bg-blue-900/20 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.3)]'
@@ -4890,11 +5513,32 @@ export default function App() {
                         : specialType === 'SELF_STUN' ? 'bg-pink-900/20 border-pink-500/50 shadow-[0_0_15px_rgba(236,72,153,0.3)]'
                         : 'bg-bg-card/50 border-border-color'
                       }
-                      ${!foundData && specialType ? 'animate-pulse' : ''}
+                      ${!foundData && specialType && !isAdrenaline ? 'animate-pulse' : ''}
                     `}
                     style={{ height: `${gameMode === 'teams' ? Math.min(wordHeight, 68) : wordHeight}px` }}
                   >
-                    {specialType && !foundData && !isFrozen && (
+                    {isAdrenaline && !foundData && (
+                      <div className="absolute top-1 right-1 z-20 flex items-center gap-1">
+                        <motion.div 
+                          animate={{ scale: [1, 1.25, 1] }}
+                          transition={{ duration: 0.8, repeat: Infinity }}
+                          className={`w-7 h-7 rounded-full flex items-center justify-center shadow-lg border-2 border-white ${
+                            adrenalineTeam === 'blue' ? 'bg-blue-600 shadow-[0_0_12px_#3b82f6]' : 'bg-red-600 shadow-[0_0_12px_#ef4444]'
+                          }`}
+                          title={`Pole Adrenaliny (+${activeAdrenaline?.bonusPull || 10} PKT) dla ${adrenalineTeam === 'blue' ? 'Niebieskich' : 'Czerwonych'}!`}
+                        >
+                          <Zap className="w-4 h-4 text-yellow-300 fill-yellow-300" />
+                        </motion.div>
+                      </div>
+                    )}
+                    {isAdrenaline && !foundData && (
+                      <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                        adrenalineTeam === 'blue' ? 'bg-blue-500/30 text-blue-200 border border-blue-400/50' : 'bg-red-500/30 text-red-200 border border-red-400/50'
+                      } animate-pulse mb-0.5`}>
+                        ⚡ ADRENALINA +{activeAdrenaline?.bonusPull || 10} ⚡
+                      </span>
+                    )}
+                    {specialType && !foundData && !isFrozen && !isAdrenaline && (
                       <div className="absolute top-1 right-1 z-20">
                         {specialType === 'FREEZE' && <div className="w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Timer className="w-4 h-4 text-white" /></div>}
                         {specialType === 'GOLD' && <div className="w-7 h-7 bg-yellow-500 rounded-full flex items-center justify-center shadow-lg border-2 border-bg-main"><Trophy className="w-4 h-4 text-white" /></div>}
@@ -4936,8 +5580,22 @@ export default function App() {
                       <motion.div 
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className={`${isCompactLayout ? 'text-[9px]' : 'text-xs'} font-black mt-1 truncate max-w-[95%] opacity-100 px-2 py-0.5 rounded bg-black/60 text-white uppercase tracking-tight flex items-center gap-1.5 shadow-sm border border-white/10`}
+                        className={`${isCompactLayout ? 'text-[9px]' : 'text-xs'} font-black mt-1 truncate max-w-[95%] opacity-100 px-2 py-0.5 rounded ${
+                          gameMode === 'teams'
+                            ? solverTeam === 'blue'
+                              ? 'bg-blue-950/80 text-blue-200 border-blue-400/40'
+                              : solverTeam === 'red'
+                              ? 'bg-red-950/80 text-red-200 border-red-400/40'
+                              : 'bg-black/60 text-white border-white/10'
+                            : 'bg-black/60 text-white border-white/10'
+                        } uppercase tracking-tight flex items-center gap-1.5 shadow-sm border`}
                       >
+                        {gameMode === 'teams' && solverTeam === 'blue' && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-300 shadow-[0_0_4px_#60a5fa] shrink-0" />
+                        )}
+                        {gameMode === 'teams' && solverTeam === 'red' && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-300 shadow-[0_0_4px_#f87171] shrink-0" />
+                        )}
                         <UserBadges username={foundData.user} size="w-3.5 h-3.5" />
                         <span className="truncate">{foundData.user}</span>
                       </motion.div>
