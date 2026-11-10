@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle, FastForward, Snowflake, Bug, Users, Swords, ArrowRight, ArrowLeft, Shuffle, UserPlus, Check, MoreVertical, Zap  } from 'lucide-react';
+import { Search, RotateCcw, CheckCircle2, AlertCircle, Timer, Trophy, ShieldCheck, Sparkles, Lightbulb, Trash2, Flame, Crown, Info, X, Clock, Eye, Wind, Ghost, Skull, HelpCircle, Globe, Settings, Volume2, VolumeX, Music, UserMinus, Maximize, Download, RefreshCw, AlertTriangle, FastForward, Snowflake, Bug, Users, Swords, ArrowRight, ArrowLeft, Shuffle, UserPlus, Check, MoreVertical, Zap, Sliders   } from 'lucide-react';
 import tmi from 'tmi.js';
 import confetti from 'canvas-confetti';
 import { check } from '@tauri-apps/plugin-updater';
@@ -173,9 +173,6 @@ export default function App() {
     }
   }, [enableAdrenalineBonus]);
 
-  // Tracks if an endangered team (<15%) forfeited their adrenaline by guessing another word
-  const adrenalineForfeitedRef = useRef<{ blue: boolean; red: boolean }>({ blue: false, red: false });
-
   // Host configuration for Adrenaline usage limit per team per match: '1' (default), '2', or 'unlimited' (zawsze)
   const [adrenalineLimit, setAdrenalineLimit] = useState<'1' | '2' | 'unlimited'>(() => {
     const saved = localStorage.getItem('adrenalineLimit');
@@ -205,6 +202,43 @@ export default function App() {
   const [teamWinReason, setTeamWinReason] = useState<'ko' | 'timeout' | 'clear' | null>(null);
   const [teamRound, setTeamRound] = useState<number>(1);
   const [lastPullDelta, setLastPullDelta] = useState<{ team: 'blue' | 'red'; amount: number; word: string; user: string } | null>(null);
+
+  // Host toggle and mode for Team Combo Streak (default: FALSE / wyłączone)
+  const [enableTeamStreak, setEnableTeamStreak] = useState<boolean>(() => {
+    const saved = localStorage.getItem('enableTeamStreak');
+    return saved !== null ? saved === 'true' : false;
+  });
+  useEffect(() => {
+    localStorage.setItem('enableTeamStreak', String(enableTeamStreak));
+  }, [enableTeamStreak]);
+  const enableTeamStreakRef = useRef(enableTeamStreak);
+  useEffect(() => {
+    enableTeamStreakRef.current = enableTeamStreak;
+  }, [enableTeamStreak]);
+
+  const [teamStreakMode, setTeamStreakMode] = useState<'balanced' | 'dynamic' | 'aggressive'>(() => {
+    const saved = localStorage.getItem('teamStreakMode');
+    if (saved === 'balanced' || saved === 'dynamic' || saved === 'aggressive') return saved;
+    return 'balanced'; // Default: balanced (max +35%)
+  });
+  useEffect(() => {
+    localStorage.setItem('teamStreakMode', teamStreakMode);
+  }, [teamStreakMode]);
+  const teamStreakModeRef = useRef(teamStreakMode);
+  useEffect(() => {
+    teamStreakModeRef.current = teamStreakMode;
+  }, [teamStreakMode]);
+
+  const getStreakBonusPercent = useCallback((count: number, mode: 'balanced' | 'dynamic' | 'aggressive') => {
+    if (count < 2) return 0;
+    if (mode === 'balanced') {
+      return count === 2 ? 15 : count === 3 ? 25 : 35;
+    } else if (mode === 'dynamic') {
+      return count === 2 ? 20 : count === 3 ? 35 : 50;
+    } else {
+      return count === 2 ? 25 : count === 3 ? 45 : 65;
+    }
+  }, []);
 
   useEffect(() => {
     blockedPlayerRef.current = blockedPlayer;
@@ -578,7 +612,6 @@ export default function App() {
     setLastPullDelta(null);
     teamMvpAwardedRef.current = false;
     setActiveAdrenaline(null);
-    adrenalineForfeitedRef.current = { blue: false, red: false };
     setAdrenalineUsedCount({ blue: 0, red: 0 });
     adrenalineUsedCountRef.current = { blue: 0, red: 0 };
     matchEndingRef.current = false;
@@ -658,14 +691,6 @@ export default function App() {
       endangeredTeam = 'red';
     }
 
-    // Reset forfeiture flag if team recovered to 15% or more
-    if (ropePosition >= 15) {
-      adrenalineForfeitedRef.current.blue = false;
-    }
-    if (ropePosition <= 85) {
-      adrenalineForfeitedRef.current.red = false;
-    }
-
     // If neither team is strictly < 15%, clear any active adrenaline immediately!
     if (!endangeredTeam) {
       if (activeAdrenalineRef.current) setActiveAdrenaline(null);
@@ -675,12 +700,6 @@ export default function App() {
     // Check if team has already reached their Adrenaline limit for this match
     const maxAllowed = adrenalineLimitRef.current === 'unlimited' ? Infinity : parseInt(adrenalineLimitRef.current, 10);
     if (adrenalineUsedCountRef.current[endangeredTeam] >= maxAllowed) {
-      if (activeAdrenalineRef.current) setActiveAdrenaline(null);
-      return;
-    }
-
-    // If this team already forfeited adrenaline during this danger period (by guessing another word), do not spawn!
-    if (adrenalineForfeitedRef.current[endangeredTeam]) {
       if (activeAdrenalineRef.current) setActiveAdrenaline(null);
       return;
     }
@@ -733,7 +752,6 @@ export default function App() {
     let roundTeamWinner: 'blue' | 'red' | 'draw' | null = null;
     if (gameModeRef.current === 'teams') {
       setActiveAdrenaline(null);
-      adrenalineForfeitedRef.current = { blue: false, red: false };
       let winner = teamMatchWinnerRef.current;
       let reason = teamWinReasonRef.current;
       if (!winner) {
@@ -1227,7 +1245,6 @@ export default function App() {
     setFrozenWords({});
     setActiveParasites({});
     setActiveAdrenaline(null);
-    adrenalineForfeitedRef.current = { blue: false, red: false };
     matchEndingRef.current = false;
     teamMatchWinnerRef.current = null;
     teamWinReasonRef.current = null;
@@ -1603,23 +1620,23 @@ export default function App() {
           // Master word: length + 5 bonus pts
           // GOLD special word: length + 5 bonus pts
           let basePull = guess.length;
+          let flatBonus = 0;
           if (isMaster) {
-            basePull += 5;
+            flatBonus += 5;
           }
           if (specialType === 'GOLD') {
-            basePull += 5;
+            flatBonus += 5;
           }
 
           let isAdrenalineHit = false;
           let adrenalineBonusAmount = 0;
-          let adrenalineForfeitedThisGuess = false;
 
           if (activeAdrenalineRef.current) {
             if (activeAdrenalineRef.current.word === guess) {
               if (activeAdrenalineRef.current.team === scoringTeam) {
                 isAdrenalineHit = true;
                 adrenalineBonusAmount = activeAdrenalineRef.current.bonusPull || 10;
-                basePull += adrenalineBonusAmount;
+                flatBonus += adrenalineBonusAmount;
 
                 // Track successful Adrenaline rescue usage for this team
                 setAdrenalineUsedCount(prev => ({
@@ -1634,12 +1651,6 @@ export default function App() {
                 showFeedback(`⚠️ ${rawUser} PRZECHWYCIŁ POLE ADRENALINY PRZECIWNIKÓW!`, "hazard");
               }
               setActiveAdrenaline(null);
-            } else if (activeAdrenalineRef.current.team === scoringTeam) {
-              // The endangered team had an active Adrenaline rescue word, but guessed another word instead!
-              // The Adrenaline bonus is immediately forfeited and disappears.
-              adrenalineForfeitedRef.current[scoringTeam] = true;
-              setActiveAdrenaline(null);
-              adrenalineForfeitedThisGuess = true;
             }
           }
           
@@ -1650,11 +1661,26 @@ export default function App() {
           }
 
           let multiplier = 1.0;
-          if (newStreakCount === 2) multiplier = 1.3;
-          else if (newStreakCount === 3) multiplier = 1.6;
-          else if (newStreakCount >= 4) multiplier = 2.0;
+          let bonusPercent = 0;
+          if (enableTeamStreakRef.current) {
+            const mode = teamStreakModeRef.current;
+            if (mode === 'balanced') {
+              if (newStreakCount === 2) { multiplier = 1.15; bonusPercent = 15; }
+              else if (newStreakCount === 3) { multiplier = 1.25; bonusPercent = 25; }
+              else if (newStreakCount >= 4) { multiplier = 1.35; bonusPercent = 35; }
+            } else if (mode === 'dynamic') {
+              if (newStreakCount === 2) { multiplier = 1.20; bonusPercent = 20; }
+              else if (newStreakCount === 3) { multiplier = 1.35; bonusPercent = 35; }
+              else if (newStreakCount >= 4) { multiplier = 1.50; bonusPercent = 50; }
+            } else if (mode === 'aggressive') {
+              if (newStreakCount === 2) { multiplier = 1.25; bonusPercent = 25; }
+              else if (newStreakCount === 3) { multiplier = 1.45; bonusPercent = 45; }
+              else if (newStreakCount >= 4) { multiplier = 1.65; bonusPercent = 65; }
+            }
+          }
 
-          const actualPull = Number((basePull * multiplier).toFixed(1));
+          // Letters are multiplied by streak, then flat bonuses (Master Word +5, Gold +5, Adrenaline +10) are added cleanly
+          const actualPull = Number(((basePull * multiplier) + flatBonus).toFixed(1));
 
           setCurrentTeamStreak({ team: scoringTeam, count: newStreakCount });
           maxTeamStreakRef.current = {
@@ -1734,15 +1760,13 @@ export default function App() {
               : isAdrenalineHit 
               ? ` [⚡ ADRENALINA +${adrenalineBonusAmount} PKT!]` 
               : '';
-            const comboNote = newStreakCount >= 2 ? ` (COMBO x${newStreakCount}! 🔥)` : '';
+            const comboNote = (enableTeamStreakRef.current && newStreakCount >= 2 && bonusPercent > 0) ? ` (COMBO x${newStreakCount}! 🔥 +${bonusPercent}%)` : '';
             const tName = scoringTeam === 'blue' ? 'NIEBIESCY' : 'CZERWONI';
             if (isAdrenalineHit) {
               const maxAllowed = adrenalineLimitRef.current === 'unlimited' ? Infinity : parseInt(adrenalineLimitRef.current, 10);
               const remaining = maxAllowed === Infinity ? '∞' : Math.max(0, maxAllowed - adrenalineUsedCountRef.current[scoringTeam]);
               const limitNote = maxAllowed === Infinity ? '' : remaining === 0 ? ' (Zużyto ostatni ratunek w meczu)' : ` (Pozostało użyć: ${remaining})`;
               showFeedback(`⚡ POTĘŻNE ODBICIE ADRENALINĄ! [${tName}] ${rawUser}: +${actualPull} PKT!${limitNote} ⚡`, "success");
-            } else if (adrenalineForfeitedThisGuess) {
-              showFeedback(`⚠️ [${tName}] ${rawUser}: trafiono inne hasło – bonus Adrenaliny przepadł! (+${actualPull} PKT)${comboNote}`, "hazard");
             } else {
               showFeedback(`[${tName}] ${rawUser}: +${actualPull} PKT! (${guess.length}-lit.${bonusNote})${comboNote}`, "success");
             }
@@ -1926,7 +1950,6 @@ export default function App() {
     setFrozenWords({});
     setActiveParasites({});
     setActiveAdrenaline(null);
-    adrenalineForfeitedRef.current = { blue: false, red: false };
     setAdrenalineUsedCount({ blue: 0, red: 0 });
     adrenalineUsedCountRef.current = { blue: 0, red: 0 };
     matchEndingRef.current = false;
@@ -2520,9 +2543,12 @@ export default function App() {
                             <Flame className="w-6 h-6 text-white" />
                           </div>
                           <div>
-                            <h4 className="text-sm font-black text-orange-400 uppercase">PŁONĄCA SERIA (COMBO STREAK 🔥)</h4>
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <h4 className="text-sm font-black text-orange-400 uppercase">PŁONĄCA SERIA (COMBO STREAK 🔥)</h4>
+                              <span className="text-[9px] bg-orange-500/20 text-orange-300 border border-orange-500/40 px-2 py-0.5 rounded-full font-bold uppercase">OPCJA HOSTA • DOMYŚLNIE WYŁ</span>
+                            </div>
                             <p className="text-[11px] text-text-secondary leading-relaxed">
-                              Gdy ta sama drużyna odgadnie <span className="text-white font-bold">3 lub więcej haseł z rzędu</span> bez przerwania przez przeciwników, otrzymuje premię <span className="text-green-400 font-bold">+30% do siły przeciągania liny</span>!
+                              Opcjonalny modyfikator włączany przez Hosta w poczekalni. Gdy ta sama drużyna odgadnie 2 lub więcej haseł z rzędu bez przerwania przez przeciwników, litery słowa zyskują zbalansowany mnożnik siły: <span className="text-white font-bold">Łagodny (+15% / +25% / max +35%)</span>, <span className="text-white font-bold">Średni (+20% / +35% / max +50%)</span> lub <span className="text-white font-bold">Mocny (+25% / +45% / max +65%)</span>. Stałe bonusy (+5 za hasło główne, +5 za złoto, +10 za adrenalinę) dodają się czysto, zapobiegając błyskawicznym wygranym.
                             </p>
                           </div>
                         </div>
@@ -2578,7 +2604,7 @@ export default function App() {
                               <span className="text-white font-bold">Aktywne TYLKO przy &lt;15%:</span> Bonus pojawia się wyłącznie wtedy, gdy stan liny spadnie poniżej 15%. Jeśli drużyna odbije i osiągnie 15% lub więcej, pole Adrenaliny natychmiast znika!
                             </li>
                             <li>
-                              <span className="text-red-400 font-bold">Ryzyko – utrata po trafieniu INNEGO hasła:</span> Jeżeli zagrożona drużyna (&lt;15%) odgadnie jakiekolwiek inne słowo z planszy zamiast wskazanego ratunku, <span className="text-yellow-300 font-bold">bonus Adrenaliny natychmiast bezpowrotnie przepada i znika</span> na czas trwania tego zagrożenia!
+                              <span className="text-white font-bold">Pozostaje aktywna dopóki lina ma &lt;15%:</span> Trafienie innego słowa nie usuwa pola Adrenaliny, jeśli po przesunięciu liny drużyna nadal znajduje się poniżej 15% (np. z 5% przesunęła się na 12%). Pole znika dopiero w momencie, gdy drużyna skutecznie przekroczy próg 15% siły lub trafi wskazany ratunek.
                             </li>
                             <li>
                               <span className="text-white font-bold">Miganie w barwach drużyny i znaczek ⚡:</span> Pole ratunkowe pulsuje neonową <span className="text-blue-400 font-bold">niebieską</span> lub <span className="text-red-400 font-bold">czerwoną obramówką</span> ze świecącym symbolem błyskawicy <span className="text-yellow-300 font-bold">⚡ ADRENALINA +10</span>.
@@ -3495,241 +3521,455 @@ export default function App() {
           {/* TEAM MODE CONTENT (DRUŻYNÓWKA) */}
           {gameMode === 'teams' && (
             <div className="w-full flex flex-col gap-6">
-              {/* Call to action & Recruitment Instructions */}
-              <div className="w-full bg-gradient-to-r from-blue-950/40 via-purple-950/30 to-red-950/40 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-md relative overflow-hidden text-center">
-                <div className="flex flex-col items-center">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="p-2 bg-blue-500/20 text-blue-400 rounded-xl border border-blue-500/30">
-                      <ShieldCheck className="w-5 h-5" />
-                    </span>
-                    <span className="font-black italic text-xl md:text-2xl tracking-tighter text-white uppercase">
-                      POCZEKALNIA DO WALKI DRUŻYNOWEJ
-                    </span>
-                    <span className="p-2 bg-red-500/20 text-red-400 rounded-xl border border-red-500/30">
-                      <Flame className="w-5 h-5" />
-                    </span>
+              {/* DEDYKOWANY PANEL: MODYFIKATORY ROZGRYWKI DRUŻYNOWEJ (NA GÓRZE) */}
+              <div className="w-full bg-gradient-to-br from-neutral-900/90 via-black/80 to-neutral-950/90 border border-white/10 rounded-2xl p-5 shadow-2xl backdrop-blur-md flex flex-col gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.25)]">
+                      <Sliders className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-xs md:text-sm font-black uppercase text-white tracking-wider">
+                          MODYFIKATORY ROZGRYWKI DRUŻYNOWEJ
+                        </h3>
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-400/20 text-yellow-300 border border-yellow-400/40 font-mono font-bold">
+                          OPCJE HOSTA
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">
+                        Dostosuj dynamikę przeciągania liny • Ustawienia zachowują się automatycznie
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-yellow-400 font-black tracking-widest text-xs uppercase mb-1">
-                    WPISZ NA CZACIE: <span className="bg-yellow-400/20 px-2 py-0.5 rounded text-white border border-yellow-400/40">!join</span> LUB <span className="bg-yellow-400/20 px-2 py-0.5 rounded text-white border border-yellow-400/40">!dolacz</span>
-                  </p>
-                  <p className="text-white/40 text-[10px] font-bold uppercase tracking-wider">
-                    Aby zrezygnować wpisz <span className="text-white/70">!leave</span>. Po starcie meczu zapisy zostają zablokowane!
-                  </p>
+
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider text-white/50 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5">
+                      <span className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_#4ade80]" />
+                      <span>AUTOSAVE</span>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Streamer Quick Management Toolbar */}
-                <div className="flex flex-wrap items-center justify-between gap-3 mt-5 pt-4 border-t border-white/10">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-black uppercase tracking-wider text-white/70">
-                        ZAPISANYCH:
-                      </span>
-                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-black border ${
-                        teamLobbyPlayers.length >= 2 
-                          ? 'bg-green-500/20 text-green-400 border-green-500/30' 
-                          : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                      }`}>
-                        {teamLobbyPlayers.length} GRACZY
-                      </span>
+                {/* 2-kolumnowy grid ze stabilnymi kartami modyfikatorów */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* MODYFIKATOR 1: BONUS ADRENALINY */}
+                  <div className={`p-4 md:p-5 rounded-2xl border transition-all flex flex-col justify-between gap-4 relative overflow-hidden ${
+                    enableAdrenalineBonus 
+                      ? 'bg-gradient-to-br from-yellow-950/30 via-black/70 to-yellow-950/15 border-yellow-500/40 shadow-[0_0_25px_rgba(234,179,8,0.12)]' 
+                      : 'bg-black/40 border-white/5 opacity-75'
+                  }`}>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`p-2.5 rounded-xl border transition-all ${
+                            enableAdrenalineBonus 
+                              ? 'bg-yellow-400/25 border-yellow-400/50 text-yellow-300 shadow-[0_0_15px_rgba(250,204,21,0.4)]' 
+                              : 'bg-white/5 border-white/10 text-white/30'
+                          }`}>
+                            <Zap className="w-4 h-4 fill-current" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs md:text-sm font-black uppercase text-white tracking-wider flex items-center gap-1.5">
+                              BONUS ADRENALINY
+                              <span className="text-[10px] text-yellow-400 font-mono font-bold">(&lt;15%)</span>
+                            </h4>
+                            <span className="text-[9px] text-white/40 font-bold uppercase">
+                              Ratunek przed K.O. • +10 PKT do liny
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setEnableAdrenalineBonus(prev => !prev)}
+                          className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer active:scale-95 shadow-sm ${
+                            enableAdrenalineBonus 
+                              ? 'bg-yellow-400 text-black border-yellow-300 shadow-[0_0_15px_rgba(250,204,21,0.4)]' 
+                              : 'bg-white/5 text-white/50 border-white/10 hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          {enableAdrenalineBonus ? 'WŁĄCZONE' : 'WYŁĄCZONE'}
+                        </button>
+                      </div>
+
+                      <p className="text-[11px] text-text-secondary leading-relaxed">
+                        Gdy drużyna ma mniej niż 15% liny, losowe hasło staje się świecącym ratunkiem (+10 PKT). Pozostaje aktywne dopóki drużyna nie przekroczy progu 15%!
+                      </p>
                     </div>
 
-                    {/* Host Settings: Bonus Adrenaliny + Limit Użyć */}
-                    <div className="flex items-center gap-2 bg-black/40 border border-white/10 p-1 rounded-xl">
-                      <button
-                        onClick={() => setEnableAdrenalineBonus(prev => !prev)}
-                        type="button"
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all cursor-pointer select-none active:scale-95 ${
-                          enableAdrenalineBonus 
-                            ? 'bg-yellow-500/15 border-yellow-400/40 hover:bg-yellow-500/25 shadow-[0_0_15px_rgba(234,179,8,0.2)]' 
-                            : 'bg-white/5 border-white/10 hover:bg-white/10 opacity-70'
-                        }`}
-                        title={enableAdrenalineBonus ? "Bonus Adrenaliny WŁĄCZONY: losowe pole ratunkowe dla drużyny mającej <15% liny" : "Bonus Adrenaliny WYŁĄCZONY: brak dodatkowych pól ratunkowych"}
-                      >
-                        <div className={`p-1 rounded-lg ${enableAdrenalineBonus ? 'bg-yellow-400/25 text-yellow-300' : 'bg-white/10 text-white/40'}`}>
-                          <Zap className="w-3.5 h-3.5 fill-current" />
-                        </div>
-                        <div className="flex flex-col text-left">
-                          <span className="text-[10px] font-black uppercase text-white tracking-wider flex items-center gap-1.5">
-                            ADRENALINA (&lt;15%)
-                            <span className={`text-[8px] px-1.5 py-0.2 rounded font-mono font-bold ${enableAdrenalineBonus ? 'bg-yellow-400 text-black' : 'bg-white/20 text-white/60'}`}>
-                              {enableAdrenalineBonus ? 'WŁ' : 'WYŁ'}
-                            </span>
-                          </span>
-                          <span className="text-[8px] text-white/50 font-bold uppercase">
-                            {enableAdrenalineBonus ? 'Ratunek poniżej 15%' : 'Brak pól ratunkowych'}
-                          </span>
-                        </div>
-                      </button>
-
-                      {enableAdrenalineBonus && (
+                    {/* Stabilny wybór limitu użyć na drużynę */}
+                    <div className="pt-3 border-t border-white/10 flex flex-col gap-2">
+                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                        <span className="text-white/60">LIMIT UŻYĆ NA DRUŻYNĘ:</span>
+                        <span className={`font-mono font-bold ${enableAdrenalineBonus ? 'text-yellow-400' : 'text-white/30'}`}>
+                          {enableAdrenalineBonus ? (adrenalineLimit === '1' ? '1x NA MECZ' : adrenalineLimit === '2' ? '2x NA MECZ' : 'BEZ LIMITU') : 'MODYFIKATOR WYŁĄCZONY'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
                         <button
-                          onClick={() => {
-                            setAdrenalineLimit(prev => prev === '1' ? '2' : prev === '2' ? 'unlimited' : '1');
-                          }}
                           type="button"
-                          className="px-2.5 py-2 bg-yellow-400/15 hover:bg-yellow-400/25 border border-yellow-400/30 rounded-lg text-[9px] font-black text-yellow-300 uppercase transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-sm"
-                          title="Kliknij, aby przełączyć limit użyć ratunku na drużynę w całym meczu"
+                          disabled={!enableAdrenalineBonus}
+                          onClick={() => setAdrenalineLimit('1')}
+                          className={`py-2 px-2 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all text-center ${
+                            !enableAdrenalineBonus 
+                              ? 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                              : adrenalineLimit === '1'
+                              ? 'bg-yellow-400/25 border-yellow-400/70 text-yellow-300 shadow-[0_0_12px_rgba(250,204,21,0.25)] cursor-pointer'
+                              : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:text-white cursor-pointer active:scale-95'
+                          }`}
                         >
-                          <span className="text-white/40 text-[8px] font-bold">LIMIT:</span>
-                          <span className="text-yellow-400 font-mono font-bold">
-                            {adrenalineLimit === '1' ? '1x NA MECZ' : adrenalineLimit === '2' ? '2x NA MECZ' : 'BEZ LIMITU'}
-                          </span>
-                          <RefreshCw className="w-2.5 h-2.5 text-yellow-400/70" />
+                          1x NA MECZ
                         </button>
-                      )}
+                        <button
+                          type="button"
+                          disabled={!enableAdrenalineBonus}
+                          onClick={() => setAdrenalineLimit('2')}
+                          className={`py-2 px-2 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all text-center ${
+                            !enableAdrenalineBonus 
+                              ? 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                              : adrenalineLimit === '2'
+                              ? 'bg-yellow-400/25 border-yellow-400/70 text-yellow-300 shadow-[0_0_12px_rgba(250,204,21,0.25)] cursor-pointer'
+                              : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:text-white cursor-pointer active:scale-95'
+                          }`}
+                        >
+                          2x NA MECZ
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!enableAdrenalineBonus}
+                          onClick={() => setAdrenalineLimit('unlimited')}
+                          className={`py-2 px-2 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all text-center ${
+                            !enableAdrenalineBonus 
+                              ? 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                              : adrenalineLimit === 'unlimited'
+                              ? 'bg-yellow-400/25 border-yellow-400/70 text-yellow-300 shadow-[0_0_12px_rgba(250,204,21,0.25)] cursor-pointer'
+                              : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:text-white cursor-pointer active:scale-95'
+                          }`}
+                        >
+                          BEZ LIMITU (∞)
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    {isDevAuthorized && (
-                      <button
-                        onClick={addTestPlayer}
-                        className="px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-xl text-[10px] font-black text-cyan-400 hover:text-cyan-300 transition-all flex items-center gap-1.5 active:scale-95 shadow-[0_0_10px_rgba(6,182,212,0.15)]"
-                        title="Opcja deweloperska: dodaje gracza testowego do poczekalni"
-                      >
-                        <UserPlus className="w-3.5 h-3.5" />
-                        + DODAJ GRACZA TESTOWEGO
-                      </button>
-                    )}
-                    {teamLobbyPlayers.length > 0 && (
-                      <button
-                        onClick={() => {
-                          setTeamLobbyPlayers([]);
-                          setBlueTeam([]);
-                          setRedTeam([]);
-                        }}
-                        className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl text-[10px] font-black text-red-400 hover:text-red-300 transition-all active:scale-95"
-                      >
-                        WYCZYŚĆ
-                      </button>
-                    )}
+                  {/* MODYFIKATOR 2: COMBO STREAK */}
+                  <div className={`p-4 md:p-5 rounded-2xl border transition-all flex flex-col justify-between gap-4 relative overflow-hidden ${
+                    enableTeamStreak 
+                      ? 'bg-gradient-to-br from-orange-950/30 via-black/70 to-orange-950/15 border-orange-500/40 shadow-[0_0_25px_rgba(249,115,22,0.12)]' 
+                      : 'bg-black/40 border-white/5 opacity-75'
+                  }`}>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`p-2.5 rounded-xl border transition-all ${
+                            enableTeamStreak 
+                              ? 'bg-orange-500/25 border-orange-400/50 text-orange-400 shadow-[0_0_15px_rgba(249,115,22,0.4)]' 
+                              : 'bg-white/5 border-white/10 text-white/30'
+                          }`}>
+                            <Flame className="w-4 h-4 fill-current" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs md:text-sm font-black uppercase text-white tracking-wider flex items-center gap-1.5">
+                              COMBO STREAK
+                              <span className="text-[10px] text-orange-400 font-mono font-bold">(SERIE)</span>
+                            </h4>
+                            <span className="text-[9px] text-white/40 font-bold uppercase">
+                              Zbalansowany mnożnik kolejnych trafień
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setEnableTeamStreak(prev => !prev)}
+                          className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer active:scale-95 shadow-sm ${
+                            enableTeamStreak 
+                              ? 'bg-orange-500 text-black border-orange-400 shadow-[0_0_15px_rgba(249,115,22,0.4)]' 
+                              : 'bg-white/5 text-white/50 border-white/10 hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          {enableTeamStreak ? 'WŁĄCZONE' : 'WYŁĄCZONE'}
+                        </button>
+                      </div>
+
+                      <p className="text-[11px] text-text-secondary leading-relaxed">
+                        Kolejne odgadnięte słowa tej samej drużyny zwiększają siłę liter. Stałe bonusy (+5 hasło główne, +5 złoto, +10 adrenalina) dodają się czysto, zapobiegając K.O. w 15 sekund.
+                      </p>
+                    </div>
+
+                    {/* Stabilny wybór intensywności serii */}
+                    <div className="pt-3 border-t border-white/10 flex flex-col gap-2">
+                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                        <span className="text-white/60">INTENSYWNOŚĆ PREMII (MOC):</span>
+                        <span className={`font-mono font-bold ${enableTeamStreak ? 'text-orange-400' : 'text-white/30'}`}>
+                          {enableTeamStreak ? (teamStreakMode === 'balanced' ? 'ŁAGODNA (+35%)' : teamStreakMode === 'dynamic' ? 'ŚREDNIA (+50%)' : 'MOCNA (+65%)') : 'MODYFIKATOR WYŁĄCZONY'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          disabled={!enableTeamStreak}
+                          onClick={() => setTeamStreakMode('balanced')}
+                          className={`py-2 px-2 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all text-center ${
+                            !enableTeamStreak 
+                              ? 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                              : teamStreakMode === 'balanced'
+                              ? 'bg-orange-500/25 border-orange-400/70 text-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.25)] cursor-pointer'
+                              : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:text-white cursor-pointer active:scale-95'
+                          }`}
+                        >
+                          ŁAGODNA (+35%)
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!enableTeamStreak}
+                          onClick={() => setTeamStreakMode('dynamic')}
+                          className={`py-2 px-2 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all text-center ${
+                            !enableTeamStreak 
+                              ? 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                              : teamStreakMode === 'dynamic'
+                              ? 'bg-orange-500/25 border-orange-400/70 text-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.25)] cursor-pointer'
+                              : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:text-white cursor-pointer active:scale-95'
+                          }`}
+                        >
+                          ŚREDNIA (+50%)
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!enableTeamStreak}
+                          onClick={() => setTeamStreakMode('aggressive')}
+                          className={`py-2 px-2 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all text-center ${
+                            !enableTeamStreak 
+                              ? 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                              : teamStreakMode === 'aggressive'
+                              ? 'bg-orange-500/25 border-orange-400/70 text-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.25)] cursor-pointer'
+                              : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:text-white cursor-pointer active:scale-95'
+                          }`}
+                        >
+                          MOCNA (+65%)
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Waiting Pool or Divided Teams View */}
+              {/* 2. POŁĄCZONA POCZEKALNIA I ZARZĄDZANIE DRUŻYNAMI (POD MODYFIKATORAMI) */}
               {blueTeam.length === 0 && redTeam.length === 0 ? (
-                /* WAITING POOL (Not yet shuffled) */
-                <div className="w-full bg-bg-card border border-border-color rounded-2xl p-6 shadow-2xl flex flex-col items-center">
-                  <div className="w-full flex items-center justify-between mb-4">
-                    <span className="text-[10px] font-black tracking-widest text-text-secondary uppercase">
-                      LISTA GRACZY W POCZEKALNI:
-                    </span>
-                    <span className="text-[10px] font-bold text-yellow-400/80 bg-yellow-400/10 px-2 py-0.5 rounded border border-yellow-400/20">
-                      PRAWY KLIK = PRZYDZIAŁ DO DRUŻYNY
-                    </span>
-                  </div>
-
-                  {teamLobbyPlayers.length === 0 ? (
-                    <div className="py-12 flex flex-col items-center justify-center text-center text-white/30 space-y-2">
-                      <Users className="w-10 h-10 stroke-1" />
-                      <p className="text-xs font-bold uppercase tracking-wider">
-                        Czekam na graczy z czatu...
+                /* WAITING POOL (Not yet shuffled) - JEDNA ZUNIFIKOWANA KARTA */
+                <div className="w-full bg-bg-card border border-border-color rounded-2xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-md">
+                  {/* Sekcja 1: Baner informacyjny i komendy czatu */}
+                  <div className="w-full bg-gradient-to-r from-blue-950/40 via-purple-950/30 to-red-950/40 border-b border-white/10 p-6 relative overflow-hidden text-center">
+                    <div className="flex flex-col items-center">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="p-2 bg-blue-500/20 text-blue-400 rounded-xl border border-blue-500/30">
+                          <ShieldCheck className="w-5 h-5" />
+                        </span>
+                        <span className="font-black italic text-xl md:text-2xl tracking-tighter text-white uppercase">
+                          POCZEKALNIA DO WALKI DRUŻYNOWEJ
+                        </span>
+                        <span className="p-2 bg-red-500/20 text-red-400 rounded-xl border border-red-500/30">
+                          <Flame className="w-5 h-5" />
+                        </span>
+                      </div>
+                      <p className="text-yellow-400 font-black tracking-widest text-xs uppercase mb-1">
+                        WPISZ NA CZACIE: <span className="bg-yellow-400/20 px-2 py-0.5 rounded text-white border border-yellow-400/40">!join</span> LUB <span className="bg-yellow-400/20 px-2 py-0.5 rounded text-white border border-yellow-400/40">!dolacz</span>
                       </p>
-                      <p className="text-[10px] text-white/20">
-                        {isDevAuthorized 
-                          ? "Wpisz !join na czacie lub kliknij przycisk „+ Dodaj gracza testowego” powyżej." 
-                          : "Wpisz !join na czacie Twitch, aby dołączyć do gry drużynowej."}
+                      <p className="text-white/40 text-[10px] font-bold uppercase tracking-wider">
+                        Aby zrezygnować wpisz <span className="text-white/70">!leave</span>. Po starcie meczu zapisy zostają zablokowane!
                       </p>
                     </div>
-                  ) : (
-                    <>
-                      <div className="flex flex-wrap justify-center gap-2 mb-3 max-h-56 overflow-y-auto p-2 w-full custom-scrollbar">
-                        {teamLobbyPlayers.map((player) => (
-                          <div 
-                            key={player}
-                            onContextMenu={(e) => {
-                              e.preventDefault();
-                              setLobbyContextMenu({
-                                x: e.clientX,
-                                y: e.clientY,
-                                player,
-                                source: 'unassigned'
-                              });
-                            }}
-                            className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-yellow-500/40 rounded-xl flex items-center gap-2 group transition-all select-none shadow-sm cursor-context-menu"
-                            title="Prawy klik: wybierz drużynę"
-                          >
-                            <span className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_#4ade80]" />
-                            <span className="text-xs font-bold text-white">{player}</span>
-                            <div className="flex items-center gap-1 ml-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  movePlayerToTeam(player, 'blue');
-                                  showFeedback(`${player} przydzielony do Niebieskich!`, "success");
-                                }}
-                                title="Przydziel do Drużyny Niebieskiej"
-                                className="p-1 text-blue-400 hover:text-white hover:bg-blue-600/40 rounded transition-all cursor-pointer"
-                              >
-                                <ShieldCheck className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  movePlayerToTeam(player, 'red');
-                                  showFeedback(`${player} przydzielony do Czerwonych!`, "success");
-                                }}
-                                title="Przydziel do Drużyny Czerwonej"
-                                className="p-1 text-red-400 hover:text-white hover:bg-red-600/40 rounded transition-all cursor-pointer"
-                              >
-                                <Flame className="w-3.5 h-3.5" />
-                              </button>
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removePlayerFromLobby(player);
-                                }}
-                                title="Usuń z gry"
-                                className="p-1 text-white/40 hover:text-red-400 transition-colors cursor-pointer"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+
+                    {/* Streamer Quick Management Toolbar */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 mt-5 pt-4 border-t border-white/10">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-black uppercase tracking-wider text-white/70">
+                          ZAPISANYCH DO MECZU:
+                        </span>
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-black border ${
+                          teamLobbyPlayers.length >= 2 
+                            ? 'bg-green-500/20 text-green-400 border-green-500/30' 
+                            : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                        }`}>
+                          {teamLobbyPlayers.length} GRACZY
+                        </span>
                       </div>
 
-                      <p className="text-[10px] text-white/40 mb-4 flex items-center gap-1.5 text-center">
-                        <Lightbulb className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
-                        <span>Kliknij prawym przyciskiem myszy na gracza lub użyj ikon przy nicku, aby ręcznie przypisać do drużyny!</span>
-                      </p>
-                    </>
-                  )}
+                      <div className="flex items-center gap-2">
+                        {isDevAuthorized && (
+                          <button
+                            onClick={addTestPlayer}
+                            className="px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-xl text-[10px] font-black text-cyan-400 hover:text-cyan-300 transition-all flex items-center gap-1.5 active:scale-95 shadow-[0_0_10px_rgba(6,182,212,0.15)] cursor-pointer"
+                            title="Opcja deweloperska: dodaje gracza testowego do poczekalni"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                            + DODAJ GRACZA TESTOWEGO
+                          </button>
+                        )}
+                        {teamLobbyPlayers.length > 0 && (
+                          <button
+                            onClick={() => {
+                              setTeamLobbyPlayers([]);
+                              setBlueTeam([]);
+                              setRedTeam([]);
+                            }}
+                            className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl text-[10px] font-black text-red-400 hover:text-red-300 transition-all active:scale-95 cursor-pointer"
+                          >
+                            WYCZYŚĆ POCZEKALNIĘ
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
 
-                  <button
-                    disabled={teamLobbyPlayers.length < 2}
-                    onClick={shuffleTeams}
-                    className={`w-full py-4 rounded-xl font-black text-xs tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2
-                      ${teamLobbyPlayers.length >= 2 
-                        ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white shadow-[0_0_20px_rgba(147,51,234,0.4)] cursor-pointer' 
-                        : 'bg-neutral-800 text-neutral-600 cursor-not-allowed opacity-50'
-                      }
-                    `}
-                  >
-                    <Shuffle className="w-4 h-4" />
-                    ROZLOSUJ DRUŻYNY (50 / 50)
-                  </button>
-                  {teamLobbyPlayers.length < 2 && (
-                    <span className="text-[9px] font-bold text-yellow-500/80 uppercase tracking-widest mt-2">
-                      Wymagane minimum 2 osoby w poczekalni, aby rozlosować składy.
-                    </span>
-                  )}
+                  {/* Sekcja 2: Lista graczy w poczekalni i losowanie */}
+                  <div className="p-6 flex flex-col items-center">
+                    <div className="w-full flex items-center justify-between mb-4">
+                      <span className="text-[10px] font-black tracking-widest text-text-secondary uppercase">
+                        LISTA GRACZY W POCZEKALNI:
+                      </span>
+                      <span className="text-[10px] font-bold text-yellow-400/80 bg-yellow-400/10 px-2 py-0.5 rounded border border-yellow-400/20">
+                        PRAWY KLIK = PRZYDZIAŁ DO DRUŻYNY
+                      </span>
+                    </div>
 
-                  <button
-                    onClick={() => {
-                      setHelpTab('teams');
-                      setShowHelp(true);
-                    }}
-                    className="w-full mt-3 py-3 rounded-xl font-black text-[10px] tracking-[0.25em] uppercase transition-all bg-white/5 text-text-secondary hover:bg-white/10 hover:text-white border border-white/5 flex items-center justify-center gap-2 group cursor-pointer"
-                  >
-                    <Info className="w-3.5 h-3.5 text-blue-400 group-hover:text-cyan-300 transition-colors" />
-                    <span>ZASADY & INSTRUKCJA GRY DRUŻYNOWEJ</span>
-                  </button>
+                    {teamLobbyPlayers.length === 0 ? (
+                      <div className="py-12 flex flex-col items-center justify-center text-center text-white/30 space-y-2">
+                        <Users className="w-10 h-10 stroke-1" />
+                        <p className="text-xs font-bold uppercase tracking-wider">
+                          Czekam na graczy z czatu...
+                        </p>
+                        <p className="text-[10px] text-white/20">
+                          {isDevAuthorized 
+                            ? "Wpisz !join na czacie lub kliknij przycisk „+ Dodaj gracza testowego” powyżej." 
+                            : "Wpisz !join na czacie Twitch, aby dołączyć do gry drużynowej."}
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap justify-center gap-2 mb-3 max-h-56 overflow-y-auto p-2 w-full custom-scrollbar">
+                          {teamLobbyPlayers.map((player) => (
+                            <div 
+                              key={player}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                setLobbyContextMenu({
+                                  x: e.clientX,
+                                  y: e.clientY,
+                                  player,
+                                  source: 'unassigned'
+                                });
+                              }}
+                              className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-yellow-500/40 rounded-xl flex items-center gap-2 group transition-all select-none shadow-sm cursor-context-menu"
+                              title="Prawy klik: wybierz drużynę"
+                            >
+                              <span className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_#4ade80]" />
+                              <span className="text-xs font-bold text-white">{player}</span>
+                              <div className="flex items-center gap-1 ml-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    movePlayerToTeam(player, 'blue');
+                                    showFeedback(`${player} przydzielony do Niebieskich!`, "success");
+                                  }}
+                                  title="Przydziel do Drużyny Niebieskiej"
+                                  className="p-1 text-blue-400 hover:text-white hover:bg-blue-600/40 rounded transition-all cursor-pointer"
+                                >
+                                  <ShieldCheck className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    movePlayerToTeam(player, 'red');
+                                    showFeedback(`${player} przydzielony do Czerwonych!`, "success");
+                                  }}
+                                  title="Przydziel do Drużyny Czerwonej"
+                                  className="p-1 text-red-400 hover:text-white hover:bg-red-600/40 rounded transition-all cursor-pointer"
+                                >
+                                  <Flame className="w-3.5 h-3.5" />
+                                </button>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removePlayerFromLobby(player);
+                                  }}
+                                  title="Usuń z gry"
+                                  className="p-1 text-white/40 hover:text-red-400 transition-colors cursor-pointer"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <p className="text-[10px] text-white/40 mb-4 flex items-center gap-1.5 text-center">
+                          <Lightbulb className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                          <span>Kliknij prawym przyciskiem myszy na gracza lub użyj ikon przy nicku, aby ręcznie przypisać do drużyny!</span>
+                        </p>
+                      </>
+                    )}
+
+                    <button
+                      disabled={teamLobbyPlayers.length < 2}
+                      onClick={shuffleTeams}
+                      className={`w-full py-4 rounded-xl font-black text-xs tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2
+                        ${teamLobbyPlayers.length >= 2 
+                          ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 hover:from-blue-500 hover:to-red-500 text-white shadow-[0_0_20px_rgba(147,51,234,0.4)] cursor-pointer' 
+                          : 'bg-neutral-800 text-neutral-600 cursor-not-allowed opacity-50'
+                        }
+                      `}
+                    >
+                      <Shuffle className="w-4 h-4" />
+                      ROZLOSUJ DRUŻYNY (50 / 50)
+                    </button>
+                    {teamLobbyPlayers.length < 2 && (
+                      <span className="text-[9px] font-bold text-yellow-500/80 uppercase tracking-widest mt-2">
+                        Wymagane minimum 2 osoby w poczekalni, aby rozlosować składy.
+                      </span>
+                    )}
+                  </div>
                 </div>
               ) : (
                 /* TEAMS DIVIDED VIEW (Roster cards) */
                 <div className="w-full flex flex-col gap-4">
+                  {/* Nagłówek rekrutacji dla widoku podzielonych drużyn */}
+                  <div className="w-full bg-gradient-to-r from-blue-950/40 via-purple-950/30 to-red-950/40 border border-white/10 rounded-2xl p-4 shadow-xl backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-center sm:text-left">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                        <ShieldCheck className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-white uppercase tracking-wider">
+                            SKŁADY ROZLOSOWANE
+                          </span>
+                          <span className="text-[9px] px-2 py-0.5 rounded bg-green-500/20 text-green-300 border border-green-500/30 font-bold uppercase">
+                            GOTOWE DO GRY
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-yellow-400 font-bold uppercase tracking-wider">
+                          Nowi widzowie mogą dopisać się wpisując <span className="text-white">!join</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black uppercase text-white/60">
+                        ŁĄCZNIE: {teamLobbyPlayers.length} GRACZY
+                      </span>
+                      {isDevAuthorized && (
+                        <button
+                          onClick={addTestPlayer}
+                          className="px-2.5 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-[9px] font-black text-cyan-400 hover:text-cyan-300 transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                        >
+                          <UserPlus className="w-3 h-3" />
+                          + TEST
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   {/* Dedicated Unassigned / Poczekalnia Section if there are unassigned players */}
                   {unassignedPlayers.length > 0 && (
                     <div className="w-full bg-neutral-900/90 border-2 border-yellow-500/40 rounded-2xl p-4 shadow-xl flex flex-col backdrop-blur-md">
@@ -4334,7 +4574,7 @@ export default function App() {
                       {statsTab === 'rounds' && 'Ile razy gracz był najszybszy w pojedynczej rundzie.'}
                       {statsTab === 'games' && 'Liczba zwycięstw w całych sesjach gry (najwięcej pkt na koniec).'}
                       {statsTab === 'masters' && 'Liczba odkrytych haseł głównych (tych na samej górze).'}
-                      {statsTab === 'streaks' && 'Rekordowa liczba rund wygranych pod rząd przez jednego gracza.'}
+                      {statsTab === 'streaks' && 'Rekordowa liczba rund wygranych z rzędu przez jednego gracza.'}
                       {statsTab === 'shields' && 'Łączna liczba tarcz zdobytych we wszystkich grach.'}
                       {statsTab === 'teamMvp' && 'Tytuły MVP drużyny przyznawane najlepszym graczom Niebieskich oraz Czerwonych po zakończeniu każdej gry.'}
                     </p>
@@ -4439,8 +4679,9 @@ export default function App() {
       const sortedBlue = [...blueStats].sort((a, b) => b.points - a.points || b.wordsFound - a.wordsFound);
       const sortedRed = [...redStats].sort((a, b) => b.points - a.points || b.wordsFound - a.wordsFound);
 
-      const blueMvp: TeamMemberStat | null = sortedBlue[0] || (blueTeam[0] ? { username: blueTeam[0], points: 0, wordsFound: 0, team: 'blue' as const } : null);
-      const redMvp: TeamMemberStat | null = sortedRed[0] || (redTeam[0] ? { username: redTeam[0], points: 0, wordsFound: 0, team: 'red' as const } : null);
+      // Only players with >0 points qualify for MVP. If no one on a team scored points, there is NO MVP for that team.
+      const blueMvp: TeamMemberStat | null = (sortedBlue[0] && sortedBlue[0].points > 0) ? sortedBlue[0] : null;
+      const redMvp: TeamMemberStat | null = (sortedRed[0] && sortedRed[0].points > 0) ? sortedRed[0] : null;
 
       const isMatchWon = teamMatchWinner === 'blue' || teamMatchWinner === 'red';
       const winner = teamMatchWinner;
@@ -4620,7 +4861,17 @@ export default function App() {
                     )}
                   </div>
                 ) : (
-                  <span className="text-xs font-bold text-white/40 italic">Brak trafień w tej rundzie</span>
+                  <div className="py-2 flex flex-col gap-1">
+                    <h3 className="text-xl md:text-2xl font-black italic text-white/40 tracking-tight">
+                      BRAK LIDERA MVP
+                    </h3>
+                    <p className="text-xs font-bold text-white/50 uppercase tracking-wider">
+                      Żaden gracz Niebieskich nie zdobył punktów w tym meczu (0 PKT)
+                    </p>
+                    <div className="mt-2 inline-flex items-center self-start gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 text-white/40 border border-white/10 text-[10px] font-bold uppercase">
+                      Brak tytułu MVP dla tej drużyny
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -4656,7 +4907,17 @@ export default function App() {
                     )}
                   </div>
                 ) : (
-                  <span className="text-xs font-bold text-white/40 italic">Brak trafień w tej rundzie</span>
+                  <div className="py-2 flex flex-col gap-1">
+                    <h3 className="text-xl md:text-2xl font-black italic text-white/40 tracking-tight">
+                      BRAK LIDERA MVP
+                    </h3>
+                    <p className="text-xs font-bold text-white/50 uppercase tracking-wider">
+                      Żaden gracz Czerwonych nie zdobył punktów w tym meczu (0 PKT)
+                    </p>
+                    <div className="mt-2 inline-flex items-center self-start gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 text-white/40 border border-white/10 text-[10px] font-bold uppercase">
+                      Brak tytułu MVP dla tej drużyny
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -4965,7 +5226,6 @@ export default function App() {
                   setLastPullDelta(null);
                   teamMvpAwardedRef.current = false;
                   setActiveAdrenaline(null);
-                  adrenalineForfeitedRef.current = { blue: false, red: false };
                   setAdrenalineUsedCount({ blue: 0, red: 0 });
                   adrenalineUsedCountRef.current = { blue: 0, red: 0 };
                   matchEndingRef.current = false;
@@ -5273,10 +5533,10 @@ export default function App() {
                     <span className="font-black text-blue-400 text-sm tracking-wider uppercase drop-shadow-[0_0_8px_rgba(59,130,246,0.6)]">
                       DRUŻYNA NIEBIESKA
                     </span>
-                    {currentTeamStreak.team === 'blue' && currentTeamStreak.count >= 2 && (
+                    {enableTeamStreak && currentTeamStreak.team === 'blue' && currentTeamStreak.count >= 2 && (
                       <span className="bg-blue-500/20 text-blue-300 border border-blue-500/40 text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.4)]">
                         <Flame className="w-3 h-3 text-blue-400" />
-                        COMBO x{currentTeamStreak.count} (+{currentTeamStreak.count === 2 ? '30' : currentTeamStreak.count === 3 ? '60' : '100'}% SIŁY)
+                        COMBO x{currentTeamStreak.count} (+{getStreakBonusPercent(currentTeamStreak.count, teamStreakMode)}% SIŁY)
                       </span>
                     )}
                   </div>
@@ -5340,10 +5600,10 @@ export default function App() {
                     <span className="font-black text-red-400 text-sm tracking-wider uppercase drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]">
                       DRUŻYNA CZERWONA
                     </span>
-                    {currentTeamStreak.team === 'red' && currentTeamStreak.count >= 2 && (
+                    {enableTeamStreak && currentTeamStreak.team === 'red' && currentTeamStreak.count >= 2 && (
                       <span className="bg-red-500/20 text-red-300 border border-red-500/40 text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.4)]">
                         <Flame className="w-3 h-3 text-red-400" />
-                        COMBO x{currentTeamStreak.count} (+{currentTeamStreak.count === 2 ? '30' : currentTeamStreak.count === 3 ? '60' : '100'}% SIŁY)
+                        COMBO x{currentTeamStreak.count} (+{getStreakBonusPercent(currentTeamStreak.count, teamStreakMode)}% SIŁY)
                       </span>
                     )}
                   </div>

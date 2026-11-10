@@ -423,7 +423,7 @@
   { "masterWord": "ELEKCJA", "answers": ["ELEKCJA", "LEKCJA", "AKCJE", "LEJEK", "ALEJE", "KLEJ", "LAJK", "LEJE", "CELE", "CELA", "ELKA"] },
   { "masterWord": "DYSPUTA", "answers": ["DYSPUTA", "PATUSY", "PATUS", "PUSTY", "STYPA", "DUPA", "USTA", "SYTA", "UPAD"] },
   { "masterWord": "DYKTANDO", "answers": ["DYKTANDO", "DOTYKA", "DYKTA", "ODDANY", "DOTYK", "ANTYK", "NOTKA", "KODY", "TYNK", "OKNA"] },
-  { "masterWord": "UCHWAŁA", "answers": ["UCHWAŁA", "CHAŁWA", "WACHA", "ŁACH", "UCHA", "CAŁA", "ŁAWA"] },
+  { "masterWord": "UCHWAŁA", "answers": ["UCHWAŁA", "CHWAŁA", "CHAŁWA", "WACHA", "ŁACH", "UCHA", "CAŁA", "ŁAWA"] },
   { "masterWord": "GNUŚNIK", "answers": ["GNUŚNIK", "UNIK", "KIŚ", "ŚNI"] },
   { "masterWord": "JEGOMOŚĆ", "answers": ["JEGOMOŚĆ", "MOJEGO", "GOŚĆ", "JEŚĆ", "MOŚĆ", "MOJE", "JEGO"] },
   { "masterWord": "GOTOWAĆ", "answers": ["GOTOWAĆ", "GOTOWA", "OWA", "OWO"] },

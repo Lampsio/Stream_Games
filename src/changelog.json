@@ -1,4 +1,17 @@
 [{
+    "version": "0.2.7",
+    "date": "2026-10-11",
+    "title": "Tryb Drużynowy",
+    "changes": [
+      "Zmieniono wygląd głównego menu gry drużynowej i kafelki z modyfikatorami",
+      "Dodano możliwość regulowania bonusów w trybie drużynowym, które mogą pojawiać się w grze",
+      "Usunięto niepotrzebne przyciski w menu głównym gry drużynowej, które nie były używane",
+      "Usprawniono pojawinie się Bonusu Adrenaliny podczas rozgrywki w trybie drużynowym",
+      "Dodano wyświetlenie o braku osoby mvp w drużynie, gdy nikt nie zdobył punktów w danej rundzie",
+      "Zmieniono w Statystykach z 'pod rząd' na 'z rzędu' w celu poprawy gramatyki i uratowania się od zwroku Arysii"
+    ]
+},  
+  {
     "version": "0.2.6",
     "date": "2026-09-11",
     "title": "Tryb Drużynowy i Nowe Menu",
